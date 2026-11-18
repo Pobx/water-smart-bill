@@ -1,81 +1,81 @@
 {
-  "generatedAt": "2026-11-18T13:52:45.418Z",
+  "generatedAt": "2026-11-18T14:28:01.034Z",
   "modelId": "eleven_multilingual_v2",
   "voiceId": "nPczCjzI2devNBz1zQrb",
   "fps": 30,
   "width": 1920,
   "height": 1080,
-  "totalDuration": 153.23,
+  "totalDuration": 129.99,
   "scenes": [
     {
       "id": "scene_01",
       "step": "INTRO & SECURITY",
       "title": "ระบบบริหารจัดการน้ำประปาอัจฉริยะ (Water Smart Bill)",
       "audioPath": "assets/audio/scene_01.mp3",
-      "provider": "thai-neural-tts-fallback",
-      "duration": 22.36,
+      "provider": "elevenlabs",
+      "duration": 18.16,
       "startTime": 0,
-      "endTime": 22.36
+      "endTime": 18.16
     },
     {
       "id": "scene_02",
       "step": "FEATURE 1 / 5",
       "title": "1. ข้อมูล อบต. / หมู่บ้าน / เจ้าของบ้าน (Default Avatar)",
       "audioPath": "assets/audio/scene_02.mp3",
-      "provider": "thai-neural-tts-fallback",
-      "duration": 22.31,
-      "startTime": 22.36,
-      "endTime": 44.67
+      "provider": "elevenlabs",
+      "duration": 19.72,
+      "startTime": 18.16,
+      "endTime": 37.88
     },
     {
       "id": "scene_03",
       "step": "FEATURE 2 / 5",
       "title": "2. อัตราค่าน้ำขั้นบันได & ทะเบียนมิเตอร์น้ำประปา",
       "audioPath": "assets/audio/scene_03.mp3",
-      "provider": "thai-neural-tts-fallback",
-      "duration": 19.2,
-      "startTime": 44.67,
-      "endTime": 63.87
+      "provider": "elevenlabs",
+      "duration": 17.87,
+      "startTime": 37.88,
+      "endTime": 55.75
     },
     {
       "id": "scene_04",
       "step": "FEATURE 3 / 5",
       "title": "3. จดมิเตอร์ภาคสนาม (Offline-First + AI OCR + Bluetooth)",
       "audioPath": "assets/audio/scene_04.mp3",
-      "provider": "thai-neural-tts-fallback",
-      "duration": 28.16,
-      "startTime": 63.87,
-      "endTime": 92.03
+      "provider": "elevenlabs",
+      "duration": 23.85,
+      "startTime": 55.75,
+      "endTime": 79.6
     },
     {
       "id": "scene_05",
       "step": "FEATURE 4 / 5",
       "title": "4. ระบบการเงินและรับชำระค่าน้ำ (Finance & Cashier Desk)",
       "audioPath": "assets/audio/scene_05.mp3",
-      "provider": "thai-neural-tts-fallback",
-      "duration": 27.64,
-      "startTime": 92.03,
-      "endTime": 119.67
+      "provider": "elevenlabs",
+      "duration": 24.37,
+      "startTime": 79.6,
+      "endTime": 103.97
     },
     {
       "id": "scene_06",
       "step": "FEATURE 5 / 5",
       "title": "5. ระบบ LINE LIFF สำหรับลูกบ้าน (Resident Portal)",
       "audioPath": "assets/audio/scene_06.mp3",
-      "provider": "thai-neural-tts-fallback",
-      "duration": 20.58,
-      "startTime": 119.67,
-      "endTime": 140.25
+      "provider": "elevenlabs",
+      "duration": 16.33,
+      "startTime": 103.97,
+      "endTime": 120.3
     },
     {
       "id": "scene_07",
       "step": "SUMMARY & OUTRO",
       "title": "Water Smart Bill — ยกระดับการประปาท้องถิ่นสู่ยุคดิจิทัล",
       "audioPath": "assets/audio/scene_07.mp3",
-      "provider": "thai-neural-tts-fallback",
-      "duration": 12.98,
-      "startTime": 140.25,
-      "endTime": 153.23
+      "provider": "elevenlabs",
+      "duration": 9.69,
+      "startTime": 120.3,
+      "endTime": 129.99
     }
   ]
 }
