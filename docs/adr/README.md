@@ -13,6 +13,7 @@
 | [0005](0005-frontend-vertical-slice-and-backend-hexagonal-architecture.md) | โครงสร้าง Frontend แบบ Vertical Slice Architecture (`piliar.me`) และ Backend แบบ Hexagonal Architecture (`vinisantos.dev`) | 2026-11-18 | **Accepted** |
 | [0006](0006-finance-cashier-invoicing-receipts-and-csv-export.md) | ระบบรับชำระเงินค่าน้ำที่สำนักงาน อบต. ออกใบเสร็จรับเงิน และส่งออกรายงานการจัดเก็บ (CSV Export) | 2026-11-18 | **Accepted** |
 | [0007](0007-hyperframes-and-elevenlabs-thai-video-tutorial.md) | การสร้างวิดีโอสอนใช้งานระบบอัตโนมัติด้วย HeyGen HyperFrames และพากย์เสียงภาษาไทยด้วย ElevenLabs TTS | 2026-11-18 | **Accepted** |
+| [0008](0008-integrate-claude-bughunter-security-framework.md) | การผสานรวม Claude-BugHunter Security Framework เข้ากับวงจรการพัฒนา Superpowers | 2026-11-18 | **Accepted** |
 
 ---
 
