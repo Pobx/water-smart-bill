@@ -432,3 +432,34 @@ func (h *WaterBillRestHandler) PayInvoice(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, inv)
 }
+
+func (h *WaterBillRestHandler) GetCollectionReport(c echo.Context) error {
+	var periodID *int64
+	if rawP := c.QueryParam("period_id"); rawP != "" {
+		if parsed, err := strconv.ParseInt(rawP, 10, 64); err == nil {
+			periodID = &parsed
+		}
+	}
+	filter := application.CollectionReportFilter{
+		PeriodID: periodID,
+		Status:   c.QueryParam("status"),
+	}
+
+	format := strings.ToLower(c.QueryParam("format"))
+	accept := c.Request().Header.Get("Accept")
+	if format == "csv" || strings.Contains(accept, "text/csv") {
+		csvBytes, err := h.Service.ExportCollectionReportCSV(c.Request().Context(), GetClaims(c), filter)
+		if err != nil {
+			return MapDomainError(c, err)
+		}
+		filename := fmt.Sprintf("collection-report-%s.csv", time.Now().Format("20060102-150405"))
+		c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+		return c.Blob(http.StatusOK, "text/csv; charset=utf-8", csvBytes)
+	}
+
+	report, err := h.Service.GetCollectionReport(c.Request().Context(), GetClaims(c), filter)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, report)
+}

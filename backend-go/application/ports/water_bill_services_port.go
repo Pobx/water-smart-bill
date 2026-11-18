@@ -27,6 +27,8 @@ type WaterBillServiceInterface interface {
 	GetOfflineBundle(ctx context.Context, claims application.Claims, zoneID *int64) (application.OfflineBundle, error)
 	ListInvoices(ctx context.Context, claims application.Claims, status string, periodID *int64) ([]application.WaterInvoice, error)
 	PayInvoice(ctx context.Context, claims application.Claims, cmd application.PayWaterInvoiceCommand) (application.WaterInvoice, error)
+	GetCollectionReport(ctx context.Context, claims application.Claims, filter application.CollectionReportFilter) (application.CollectionSummaryReport, error)
+	ExportCollectionReportCSV(ctx context.Context, claims application.Claims, filter application.CollectionReportFilter) ([]byte, error)
 	GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error)
 	LinkLiffAccount(ctx context.Context, cmd application.LiffLinkAccountCommand) (application.LiffResidentPortalData, error)
 }

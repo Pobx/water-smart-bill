@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -721,6 +722,14 @@ func (s *Store) PayInvoice(_ context.Context, _ *int64, cmd application.PayWater
 	for i := range s.invoices {
 		if s.invoices[i].ID == cmd.InvoiceID {
 			s.invoices[i].Status = "paid"
+			method := strings.TrimSpace(cmd.PaymentMethod)
+			if method == "" {
+				method = "cash"
+			}
+			s.invoices[i].PaymentMethod = method
+			s.invoices[i].CashierID = cmd.CashierID
+			s.invoices[i].PaidAt = time.Now().Format(time.RFC3339)
+			s.invoices[i].ReceiptNo = fmt.Sprintf("RC-%s-%04d", time.Now().Format("200601"), s.invoices[i].ID)
 			for mIdx := range s.meters {
 				if s.meters[mIdx].MeterID == s.invoices[i].MeterID && s.meters[mIdx].OweCount > 0 {
 					s.meters[mIdx].OweCount--

@@ -67,8 +67,14 @@ export interface InvoiceItem {
   ocr_text: string
   ocr_confidence: number
   status: 'invoice' | 'paid'
+  payment_method?: string
+  receipt_no?: string
+  paid_at?: string
+  cashier_id?: number
   recorded_at: string
 }
+
+export type WaterInvoiceItem = InvoiceItem
 
 export function makeDefaultAvatarDataUri(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)

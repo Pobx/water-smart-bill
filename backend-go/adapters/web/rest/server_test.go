@@ -149,4 +149,35 @@ func TestHTTPServerWaterBillEndpoints(t *testing.T) {
 	if recLiff.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK from LIFF bills, got %d", recLiff.Code)
 	}
+
+	// Finance & Cashier Pay Invoice
+	payBody, _ := json.Marshal(map[string]any{
+		"payment_method": "cash",
+	})
+	reqPay := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/invoices/1/pay", bytes.NewReader(payBody))
+	reqPay.Header.Set("Authorization", "Bearer valid-admin-token")
+	reqPay.Header.Set("Content-Type", "application/json")
+	recPay := httptest.NewRecorder()
+	srv.ServeHTTP(recPay, reqPay)
+	if recPay.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from pay invoice, got %d: %s", recPay.Code, recPay.Body.String())
+	}
+
+	// Finance & Cashier Collection Report (JSON)
+	reqReport := httptest.NewRequest(http.MethodGet, "/api/v1/water-bills/reports/collections", nil)
+	reqReport.Header.Set("Authorization", "Bearer valid-admin-token")
+	recReport := httptest.NewRecorder()
+	srv.ServeHTTP(recReport, reqReport)
+	if recReport.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from collection report, got %d: %s", recReport.Code, recReport.Body.String())
+	}
+
+	// Finance & Cashier Collection Report (CSV)
+	reqCSV := httptest.NewRequest(http.MethodGet, "/api/v1/water-bills/reports/collections?format=csv", nil)
+	reqCSV.Header.Set("Authorization", "Bearer valid-admin-token")
+	recCSV := httptest.NewRecorder()
+	srv.ServeHTTP(recCSV, reqCSV)
+	if recCSV.Code != http.StatusOK || !strings.Contains(recCSV.Body.String(), "เลขที่บิล") {
+		t.Fatalf("expected 200 OK with CSV output, got %d: %s", recCSV.Code, recCSV.Body.String())
+	}
 }

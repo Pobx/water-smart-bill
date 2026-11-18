@@ -4,6 +4,7 @@ import { TariffsMetersScreen, useTariffsMeters } from '@/features/tariffs-meters
 import { FieldReaderScreen, useFieldReader } from '@/features/field-reader'
 import { LiffPortalScreen, useLiffPortal } from '@/features/liff-portal'
 import { AuthModal, useAuth } from '@/features/auth'
+import { FinanceCashierScreen, useFinanceCashier } from '@/features/finance-cashier'
 
 describe('Frontend Vertical Slice Architecture (piliar.me)', () => {
   it('exports self-contained Screen and useFeature hook from each feature barrel index.ts', () => {
@@ -15,6 +16,9 @@ describe('Frontend Vertical Slice Architecture (piliar.me)', () => {
 
     expect(typeof FieldReaderScreen).toBe('function')
     expect(typeof useFieldReader).toBe('function')
+
+    expect(typeof FinanceCashierScreen).toBe('function')
+    expect(typeof useFinanceCashier).toBe('function')
 
     expect(typeof LiffPortalScreen).toBe('function')
     expect(typeof useLiffPortal).toBe('function')

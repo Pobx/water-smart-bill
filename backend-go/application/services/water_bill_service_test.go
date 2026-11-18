@@ -104,4 +104,40 @@ func TestWaterBillServiceUseCases(t *testing.T) {
 	if portal.Homeowner.HouseNo != "99/8" || len(portal.Invoices) == 0 {
 		t.Fatalf("expected LIFF portal data for 99/8 with invoice, got %+v", portal)
 	}
+
+	// 7. Finance & Cashier: Pay invoice at SAO desk
+	paidInv, err := svc.PayInvoice(ctx, claims, application.PayWaterInvoiceCommand{
+		InvoiceID:     inv.ID,
+		CashierID:     1,
+		PaymentMethod: "cash",
+	})
+	if err != nil {
+		t.Fatalf("pay invoice: %v", err)
+	}
+	if paidInv.Status != "paid" || paidInv.ReceiptNo == "" || paidInv.PaymentMethod != "cash" {
+		t.Fatalf("expected invoice paid with receipt_no, got %+v", paidInv)
+	}
+
+	// 8. Finance & Cashier: Generate Collection Summary Report & CSV Export
+	periodID := int64(1)
+	report, err := svc.GetCollectionReport(ctx, claims, application.CollectionReportFilter{
+		PeriodID: &periodID,
+	})
+	if err != nil {
+		t.Fatalf("get collection report: %v", err)
+	}
+	if report.TotalInvoices < 1 || report.PaidInvoices < 1 || report.TotalCash <= 0 {
+		t.Fatalf("expected collection report to have paid cash invoice, got %+v", report)
+	}
+
+	csvData, err := svc.ExportCollectionReportCSV(ctx, claims, application.CollectionReportFilter{
+		PeriodID: &periodID,
+	})
+	if err != nil {
+		t.Fatalf("export collection report csv: %v", err)
+	}
+	csvStr := string(csvData)
+	if !strings.Contains(csvStr, "เลขที่บิล") || !strings.Contains(csvStr, paidInv.InvoiceNo) || !strings.Contains(csvStr, "รวมทั้งสิ้น") {
+		t.Fatalf("expected valid CSV with headers and invoice row, got %s", csvStr)
+	}
 }

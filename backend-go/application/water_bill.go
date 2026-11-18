@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DomainValidatableInterface follows vinisantos.dev Hexagonal Architecture entity validation contract.
@@ -383,6 +384,10 @@ type WaterInvoice struct {
 	OCRText         string  `json:"ocr_text"`
 	OCRConfidence   float64 `json:"ocr_confidence"`
 	Status          string  `json:"status"`
+	PaymentMethod   string  `json:"payment_method,omitempty"`
+	ReceiptNo       string  `json:"receipt_no,omitempty"`
+	PaidAt          string  `json:"paid_at,omitempty"`
+	CashierID       int64   `json:"cashier_id,omitempty"`
 	RecordedAt      string  `json:"recorded_at"`
 }
 
@@ -522,4 +527,30 @@ func (cmd LiffLinkAccountCommand) IsValid() (bool, error) {
 func (cmd LiffLinkAccountCommand) Validate() error {
 	_, err := cmd.IsValid()
 	return err
+}
+
+// ---- Finance & Cashier Collection Report Models ----------------------------
+
+type CollectionReportFilter struct {
+	PeriodID *int64     `json:"period_id,omitempty"`
+	FromDate *time.Time `json:"from_date,omitempty"`
+	ToDate   *time.Time `json:"to_date,omitempty"`
+	Status   string     `json:"status,omitempty"`
+}
+
+type CollectionSummaryReport struct {
+	PeriodID         int64          `json:"period_id"`
+	PeriodName       string         `json:"period_name"`
+	TotalInvoices    int            `json:"total_invoices"`
+	PaidInvoices     int            `json:"paid_invoices"`
+	UnpaidInvoices   int            `json:"unpaid_invoices"`
+	TotalUnitsUsed   int64          `json:"total_units_used"`
+	TotalWaterCharge float64        `json:"total_water_charge"`
+	TotalReserveFee  float64        `json:"total_reserve_fee"`
+	TotalVatAmount   float64        `json:"total_vat_amount"`
+	TotalCollected   float64        `json:"total_collected"`
+	TotalCash        float64        `json:"total_cash"`
+	TotalPromptPay   float64        `json:"total_promptpay"`
+	GeneratedAt      string         `json:"generated_at"`
+	Invoices         []WaterInvoice `json:"invoices"`
 }

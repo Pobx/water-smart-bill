@@ -1,7 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/pobx/water-smart-bill/backend-go/application"
 	"github.com/pobx/water-smart-bill/backend-go/application/ports"
@@ -248,4 +254,121 @@ func (s *WaterBillService) LinkLiffAccount(ctx context.Context, cmd application.
 		return application.LiffResidentPortalData{}, err
 	}
 	return s.Repository.LinkLiffAccount(ctx, cmd)
+}
+
+func (s *WaterBillService) GetCollectionReport(ctx context.Context, claims application.Claims, filter application.CollectionReportFilter) (application.CollectionSummaryReport, error) {
+	invoices, err := s.ListInvoices(ctx, claims, filter.Status, filter.PeriodID)
+	if err != nil {
+		return application.CollectionSummaryReport{}, err
+	}
+
+	report := application.CollectionSummaryReport{
+		GeneratedAt: time.Now().Format(time.RFC3339),
+		Invoices:    invoices,
+	}
+	if filter.PeriodID != nil {
+		report.PeriodID = *filter.PeriodID
+		report.PeriodName = fmt.Sprintf("งวดที่ %d", *filter.PeriodID)
+	}
+
+	for _, inv := range invoices {
+		report.TotalInvoices++
+		report.TotalUnitsUsed += int64(inv.WaterUsed)
+		report.TotalWaterCharge += inv.Paid
+		report.TotalReserveFee += inv.ReserveMeter
+		report.TotalVatAmount += inv.Vat
+
+		if strings.EqualFold(inv.Status, "paid") {
+			report.PaidInvoices++
+			report.TotalCollected += inv.TotalPaid
+			if strings.EqualFold(inv.PaymentMethod, "cash") {
+				report.TotalCash += inv.TotalPaid
+			} else {
+				report.TotalPromptPay += inv.TotalPaid
+			}
+		} else {
+			report.UnpaidInvoices++
+		}
+	}
+
+	return report, nil
+}
+
+func (s *WaterBillService) ExportCollectionReportCSV(ctx context.Context, claims application.Claims, filter application.CollectionReportFilter) ([]byte, error) {
+	report, err := s.GetCollectionReport(ctx, claims, filter)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	// UTF-8 BOM for Thai text in Excel
+	buf.WriteString("\xef\xbb\xbf")
+
+	writer := csv.NewWriter(&buf)
+
+	// Write header
+	headers := []string{
+		"เลขที่บิล",
+		"รหัสมิเตอร์",
+		"เลขครั้งก่อน",
+		"เลขครั้งนี้",
+		"หน่วยที่ใช้",
+		"ค่าน้ำ (บาท)",
+		"ค่ารักษามิเตอร์ (บาท)",
+		"ภาษีมูลค่าเพิ่ม (บาท)",
+		"ยอดรวมสุทธิ (บาท)",
+		"สถานะ",
+		"วิธีชำระเงิน",
+		"เลขที่ใบเสร็จ",
+		"วันที่ชำระเงิน",
+	}
+	if err := writer.Write(headers); err != nil {
+		return nil, err
+	}
+
+	for _, inv := range report.Invoices {
+		row := []string{
+			inv.InvoiceNo,
+			strconv.FormatInt(inv.MeterID, 10),
+			strconv.FormatFloat(inv.LastMeter, 'f', 2, 64),
+			strconv.FormatFloat(inv.CurrentMeter, 'f', 2, 64),
+			strconv.FormatFloat(inv.WaterUsed, 'f', 2, 64),
+			strconv.FormatFloat(inv.Paid, 'f', 2, 64),
+			strconv.FormatFloat(inv.ReserveMeter, 'f', 2, 64),
+			strconv.FormatFloat(inv.Vat, 'f', 2, 64),
+			strconv.FormatFloat(inv.TotalPaid, 'f', 2, 64),
+			inv.Status,
+			inv.PaymentMethod,
+			inv.ReceiptNo,
+			inv.PaidAt,
+		}
+		if err := writer.Write(row); err != nil {
+			return nil, err
+		}
+	}
+
+	// Write summary row
+	summaryRow := []string{
+		"รวมทั้งสิ้น",
+		fmt.Sprintf("จำนวน %d บิล", report.TotalInvoices),
+		"-",
+		"-",
+		strconv.FormatInt(report.TotalUnitsUsed, 10),
+		strconv.FormatFloat(report.TotalWaterCharge, 'f', 2, 64),
+		strconv.FormatFloat(report.TotalReserveFee, 'f', 2, 64),
+		strconv.FormatFloat(report.TotalVatAmount, 'f', 2, 64),
+		strconv.FormatFloat(report.TotalCollected, 'f', 2, 64),
+		fmt.Sprintf("ชำระแล้ว %d / ค้าง %d", report.PaidInvoices, report.UnpaidInvoices),
+		fmt.Sprintf("เงินสด: %.2f | QR: %.2f", report.TotalCash, report.TotalPromptPay),
+		"-",
+		report.GeneratedAt,
+	}
+	_ = writer.Write(summaryRow)
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }

@@ -4,9 +4,10 @@ import { MasterDataScreen, useMasterData } from '@/features/master-data'
 import { TariffsMetersScreen, useTariffsMeters } from '@/features/tariffs-meters'
 import { FieldReaderScreen, useFieldReader } from '@/features/field-reader'
 import { LiffPortalScreen, useLiffPortal } from '@/features/liff-portal'
+import { FinanceCashierScreen } from '@/features/finance-cashier'
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'master' | 'tariffs' | 'reader' | 'liff'>('master')
+  const [activeTab, setActiveTab] = useState<'master' | 'tariffs' | 'reader' | 'cashier' | 'liff'>('master')
 
   // Vertical Slice 1: Auth & Redis JWT Blacklist
   const auth = useAuth()
@@ -129,14 +130,25 @@ export function App() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('liff')}
+            onClick={() => setActiveTab('cashier')}
             className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
-              activeTab === 'liff'
+              activeTab === 'cashier'
                 ? 'bg-emerald-600 text-white shadow-2xs'
                 : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            4. LINE LIFF ลูกบ้าน
+            4. การเงิน & รับชำระ (Finance & Cashier)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('liff')}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+              activeTab === 'liff'
+                ? 'bg-blue-600 text-white shadow-2xs'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            5. LINE LIFF ลูกบ้าน
           </button>
         </div>
       </header>
@@ -160,6 +172,8 @@ export function App() {
             periods={tariffsMeters.periods}
           />
         )}
+
+        {activeTab === 'cashier' && <FinanceCashierScreen token={auth.jwtToken} />}
 
         {activeTab === 'liff' && (
           <LiffPortalScreen

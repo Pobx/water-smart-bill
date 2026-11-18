@@ -117,6 +117,8 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	api.POST("/tabwater/readings/sync", restHandler.SyncOfflineReadings)
 	api.GET("/tabwater/invoices", restHandler.ListInvoices)
 	api.POST("/tabwater/invoices/:id/pay", restHandler.PayInvoice)
+	api.GET("/tabwater/reports/collections", restHandler.GetCollectionReport)
+	api.GET("/water-bills/reports/collections", restHandler.GetCollectionReport)
 
 	return e
 }
