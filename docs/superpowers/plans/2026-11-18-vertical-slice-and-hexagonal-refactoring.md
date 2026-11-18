@@ -12,11 +12,11 @@
 
 ### Task 1: Backend Hexagonal Architecture (`application/` & `adapters/`)
 - **Files:**
-  - `backend-go/application/tabwater.go` & `backend-go/application/domain.go` & `backend-go/application/domain_test.go`
-  - `backend-go/application/ports/tabwater_persistence.go` & `backend-go/application/ports/tabwater_services_port.go`
-  - `backend-go/application/services/tabwater_service.go` & `backend-go/application/services/tabwater_service_test.go`
-  - `backend-go/adapters/dto/tabwater_dto.go` & `backend-go/adapters/dto/tabwater_dto_test.go`
-  - `backend-go/adapters/web/rest/handler/tabwater_rest.go` & `backend-go/adapters/web/rest/server.go` & `backend-go/adapters/web/rest/server_test.go`
+  - `backend-go/application/water_bill.go` & `backend-go/application/domain.go` & `backend-go/application/domain_test.go`
+  - `backend-go/application/ports/water_bill_persistence.go` & `backend-go/application/ports/water_bill_services_port.go`
+  - `backend-go/application/services/water_bill_service.go` & `backend-go/application/services/water_bill_service_test.go`
+  - `backend-go/adapters/dto/water_bill_dto.go` & `backend-go/adapters/dto/water_bill_dto_test.go`
+  - `backend-go/adapters/web/rest/handler/water_bill_rest.go` & `backend-go/adapters/web/rest/server.go` & `backend-go/adapters/web/rest/server_test.go`
   - `backend-go/adapters/sqldb/repository.go`, `backend-go/adapters/memory/repository.go`, `backend-go/adapters/keycloak/verifier.go`, `backend-go/adapters/blacklist/redis_blacklist.go`
   - `backend-go/cmd/api/main.go`
 - **Verification:** `cd backend-go && go test ./... -v`
