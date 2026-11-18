@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	inhttp "github.com/pobx/water-smart-bill/backend-go/internal/adapter/in/http"
-	"github.com/pobx/water-smart-bill/backend-go/internal/adapter/out/blacklist"
-	"github.com/pobx/water-smart-bill/backend-go/internal/adapter/out/keycloak"
-	"github.com/pobx/water-smart-bill/backend-go/internal/adapter/out/memory"
-	"github.com/pobx/water-smart-bill/backend-go/internal/adapter/out/postgres"
-	"github.com/pobx/water-smart-bill/backend-go/internal/app"
-	"github.com/pobx/water-smart-bill/backend-go/internal/domain"
+	"github.com/pobx/water-smart-bill/backend-go/adapters/blacklist"
+	"github.com/pobx/water-smart-bill/backend-go/adapters/keycloak"
+	"github.com/pobx/water-smart-bill/backend-go/adapters/memory"
+	"github.com/pobx/water-smart-bill/backend-go/adapters/sqldb"
+	"github.com/pobx/water-smart-bill/backend-go/adapters/web/rest"
+	"github.com/pobx/water-smart-bill/backend-go/application/ports"
+	"github.com/pobx/water-smart-bill/backend-go/application/services"
 )
 
 func getenv(key, fallback string) string {
@@ -35,9 +35,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	var repo domain.WaterBillRepository
+	var repo ports.WaterBillRepositoryInterface
 	if strings.TrimSpace(dbURL) != "" {
-		pgStore, err := postgres.NewStore(ctx, dbURL, migrationsDir)
+		pgStore, err := sqldb.NewStore(ctx, dbURL, migrationsDir)
 		if err != nil {
 			log.Printf("WARN: PostgreSQL connection failed (%v), falling back to seeded memory store", err)
 			repo = memory.NewStore()
@@ -58,10 +58,10 @@ func main() {
 	})
 
 	bl := blacklist.NewStore(redisAddr)
-	svc := app.NewWaterService(repo)
+	svc := services.NewWaterBillService(repo)
 	specBytes, _ := os.ReadFile(openAPIPath)
 
-	srv := inhttp.NewServer(inhttp.ServerConfig{
+	srv := rest.NewServer(rest.ServerConfig{
 		AppEnv:          appEnv,
 		Verifier:        verifier,
 		Blacklist:       bl,
