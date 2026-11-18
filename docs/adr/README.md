@@ -10,6 +10,7 @@
 | [0002](0002-water-smart-bill-system-architecture.md) | สถาปัตยกรรมระบบบริหารจัดการน้ำประปา อบต. (Water Smart Bill Architecture & PIOS Evolution) | 2026-11-18 | **Accepted** |
 | [0003](0003-offline-first-sync-bluetooth-escpos-and-hybrid-ocr.md) | ระบบ Offline-First Sync, เครื่องพิมพ์ใบเสร็จ Bluetooth (ESC/POS) และ Hybrid OCR อ่านเลขมิเตอร์ | 2026-11-18 | **Accepted** |
 | [0004](0004-keycloak-oidc-redis-jwt-blacklist-and-tailwind-theme.md) | ระบบยืนยันตัวตน Keycloak OIDC, Redis JWT Blacklist เมื่อ Logout และ Custom Tailwind CSS Login Theme | 2026-11-18 | **Accepted** |
+| [0005](0005-frontend-vertical-slice-and-backend-hexagonal-architecture.md) | โครงสร้าง Frontend แบบ Vertical Slice Architecture (`piliar.me`) และ Backend แบบ Hexagonal Architecture (`vinisantos.dev`) | 2026-11-18 | **Accepted** |
 
 ---
 

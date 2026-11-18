@@ -5,9 +5,11 @@
 
 ---
 
-## 2. สถาปัตยกรรมและเทคโนโลยี (Technology Stack)
+## 2. สถาปัตยกรรมและเทคโนโลยี (Technology Stack & Codebase Architecture)
 - **Frontend:** React 18 (TypeScript) + Vite + Tailwind CSS + `shadcn/ui` & `v0.app` Design System + IndexedDB Offline Queue + Web Bluetooth API (ESC/POS) + LINE LIFF View
-- **Backend:** Golang 1.23 + Echo v4 Framework (Hexagonal / Clean Architecture)
+  - **Frontend Architecture Standard:** **Vertical Slice Architecture** อ้างอิงตาม [Martin Piliar — Vertical Slice Architecture Guide](https://www.piliar.me/blog/vertical-slice-architecture-react-native/) โดยจัดกลุ่มโค้ดตาม Feature Slice ภายใต้ `frontend-react/src/features/<slice>/` แต่ละ Slice ประกอบด้วย `<Feature>Screen.tsx` (View), `use<Feature>.ts` (State & Logic Hook), `<feature>Api.ts` (API Client), และ `index.ts` (Public Barrel Export) แยกจาก `src/shared/` อย่างชัดเจน
+- **Backend:** Golang 1.23 + Echo v4 Framework
+  - **Backend Architecture Standard:** **Hexagonal Architecture (Ports & Adapters)** อ้างอิงตาม [Vinícius A dos Santos — Hexagonal Architecture with Golang](https://vinisantos.dev/posts/hexagonal-architecture-with-golang) โดยแยกชั้น `application/` (Domain Entities + `IsValid()`, `application/ports/` สำหรับ Inbound Service Port & Outbound Persistence/Auth/Blacklist Port, และ `application/services/` สำหรับ Service Implementation) ออกจากชั้น `adapters/` (`adapters/dto/` พร้อม `Bind()` & `ConvertToEntity()`, `adapters/web/rest/handler/`, `adapters/web/rest/server.go`, `adapters/sqldb/`, `adapters/memory/`, `adapters/keycloak/`, `adapters/blacklist/`)
 - **Database:** PostgreSQL 16 (พร้อม Row-Level Security แยกตาม `org_id`)
 - **Authentication & Security:** Keycloak 26 OIDC + Redis 7 JWT Blacklist (เมื่อ Logout) + Custom Keycloak Login Theme ด้วย Tailwind CSS
 - **API Documentation:** OpenAPI 3.0 / Swagger UI เปิดใช้งานเฉพาะ Non-Production (`APP_ENV != "production"`)
