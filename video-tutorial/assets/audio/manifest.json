@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-11-18T14:28:01.034Z",
+  "generatedAt": "2026-11-18T14:50:22.240Z",
   "modelId": "eleven_multilingual_v2",
-  "voiceId": "nPczCjzI2devNBz1zQrb",
+  "voiceId": "Xb7hH8MSUJpSbSDYk0k2",
   "fps": 30,
   "width": 1920,
   "height": 1080,
-  "totalDuration": 129.99,
+  "totalDuration": 133.38,
   "scenes": [
     {
       "id": "scene_01",
@@ -13,9 +13,9 @@
       "title": "ระบบบริหารจัดการน้ำประปาอัจฉริยะ (Water Smart Bill)",
       "audioPath": "assets/audio/scene_01.mp3",
       "provider": "elevenlabs",
-      "duration": 18.16,
+      "duration": 19.67,
       "startTime": 0,
-      "endTime": 18.16
+      "endTime": 19.67
     },
     {
       "id": "scene_02",
@@ -23,9 +23,9 @@
       "title": "1. ข้อมูล อบต. / หมู่บ้าน / เจ้าของบ้าน (Default Avatar)",
       "audioPath": "assets/audio/scene_02.mp3",
       "provider": "elevenlabs",
-      "duration": 19.72,
-      "startTime": 18.16,
-      "endTime": 37.88
+      "duration": 20.56,
+      "startTime": 19.67,
+      "endTime": 40.23
     },
     {
       "id": "scene_03",
@@ -34,8 +34,8 @@
       "audioPath": "assets/audio/scene_03.mp3",
       "provider": "elevenlabs",
       "duration": 17.87,
-      "startTime": 37.88,
-      "endTime": 55.75
+      "startTime": 40.23,
+      "endTime": 58.1
     },
     {
       "id": "scene_04",
@@ -44,8 +44,8 @@
       "audioPath": "assets/audio/scene_04.mp3",
       "provider": "elevenlabs",
       "duration": 23.85,
-      "startTime": 55.75,
-      "endTime": 79.6
+      "startTime": 58.1,
+      "endTime": 81.95
     },
     {
       "id": "scene_05",
@@ -53,9 +53,9 @@
       "title": "4. ระบบการเงินและรับชำระค่าน้ำ (Finance & Cashier Desk)",
       "audioPath": "assets/audio/scene_05.mp3",
       "provider": "elevenlabs",
-      "duration": 24.37,
-      "startTime": 79.6,
-      "endTime": 103.97
+      "duration": 21.58,
+      "startTime": 81.95,
+      "endTime": 103.53
     },
     {
       "id": "scene_06",
@@ -63,9 +63,9 @@
       "title": "5. ระบบ LINE LIFF สำหรับลูกบ้าน (Resident Portal)",
       "audioPath": "assets/audio/scene_06.mp3",
       "provider": "elevenlabs",
-      "duration": 16.33,
-      "startTime": 103.97,
-      "endTime": 120.3
+      "duration": 17.08,
+      "startTime": 103.53,
+      "endTime": 120.61
     },
     {
       "id": "scene_07",
@@ -73,9 +73,9 @@
       "title": "Water Smart Bill — ยกระดับการประปาท้องถิ่นสู่ยุคดิจิทัล",
       "audioPath": "assets/audio/scene_07.mp3",
       "provider": "elevenlabs",
-      "duration": 9.69,
-      "startTime": 120.3,
-      "endTime": 129.99
+      "duration": 12.77,
+      "startTime": 120.61,
+      "endTime": 133.38
     }
   ]
 }
