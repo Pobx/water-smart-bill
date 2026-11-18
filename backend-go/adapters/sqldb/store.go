@@ -597,7 +597,9 @@ SELECT inv.id, inv.inv_no, COALESCE(inv.client_reading_id, ''), inv.org_id, COAL
        inv.inv_period_id_fk, COALESCE(p.inv_p_name, ''),
        inv.lastmeter::float8, inv.currentmeter::float8, inv.water_used::float8,
        inv.paid::float8, inv.reserve_meter::float8, inv.vat::float8, inv.totalpaid::float8,
-       inv.reading_photo_url, inv.ocr_text, inv.ocr_confidence::float8, inv.status, inv.recorded_at::text
+       inv.reading_photo_url, inv.ocr_text, inv.ocr_confidence::float8, inv.status,
+       COALESCE(inv.payment_method, ''), COALESCE(inv.receipt_no, ''), COALESCE(inv.paid_at::text, ''), COALESCE(inv.cashier_id, 0),
+       inv.recorded_at::text
 FROM tw_invoice inv
 LEFT JOIN organizations o ON o.id = inv.org_id
 LEFT JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
@@ -622,7 +624,9 @@ ORDER BY inv.id DESC
 			&inv.MeterID, &inv.MeterNumber, &inv.HomeownerName, &inv.HouseNo, &inv.ZoneName,
 			&inv.PeriodID, &inv.PeriodName, &inv.LastMeter, &inv.CurrentMeter, &inv.WaterUsed,
 			&inv.Paid, &inv.ReserveMeter, &inv.Vat, &inv.TotalPaid,
-			&inv.ReadingPhotoURL, &inv.OCRText, &inv.OCRConfidence, &inv.Status, &inv.RecordedAt,
+			&inv.ReadingPhotoURL, &inv.OCRText, &inv.OCRConfidence, &inv.Status,
+			&inv.PaymentMethod, &inv.ReceiptNo, &inv.PaidAt, &inv.CashierID,
+			&inv.RecordedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -644,7 +648,13 @@ WITH target AS (
     RETURNING id
 )
 UPDATE tw_invoice inv
-SET status = 'paid', acc_trans_id_fk = ins_acc.id, updated_at = NOW()
+SET status = 'paid',
+    payment_method = COALESCE(NULLIF($2, ''), 'cash'),
+    receipt_no = 'RC-' || TO_CHAR(NOW(), 'YYYYMM') || '-' || LPAD(inv.id::text, 4, '0'),
+    paid_at = NOW(),
+    cashier_id = $3,
+    acc_trans_id_fk = ins_acc.id,
+    updated_at = NOW()
 FROM ins_acc
 WHERE inv.id = $1
 `

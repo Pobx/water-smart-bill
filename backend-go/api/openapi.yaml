@@ -230,3 +230,30 @@ paths:
       responses:
         '200':
           description: ผูกบัญชีสำเร็จ
+  /api/v1/water-bills/reports/collections:
+    get:
+      summary: ดึงรายงานสรุปการจัดเก็บค่าน้ำ (JSON หรือ CSV เมื่อ format=csv)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: period_id
+          schema:
+            type: integer
+          description: รหัสงวดบิล
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [json, csv]
+          description: รูปแบบข้อมูลที่ต้องการดาวน์โหลด (json หรือ csv)
+      responses:
+        '200':
+          description: สรุปรายงานการจัดเก็บค่าน้ำ
+          content:
+            application/json:
+              schema:
+                type: object
+            text/csv:
+              schema:
+                type: string

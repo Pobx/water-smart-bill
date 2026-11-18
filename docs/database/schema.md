@@ -241,6 +241,10 @@ erDiagram
 | `ocr_text` | `VARCHAR(50)` | `DEFAULT ''` | ค่าตัวเลขที่อ่านได้จาก OCR |
 | `ocr_confidence` | `NUMERIC(5,2)` | `DEFAULT 0` | ความมั่นใจของ OCR (%) |
 | `status` | `TEXT` | `CHECK (status IN ('init', 'invoice', 'paid', 'owe', 'deleted'))` | สถานะบิล (`invoice`=รอชำระ, `paid`=ชำระแล้ว) |
+| `payment_method` | `VARCHAR(50)` | `DEFAULT ''` | ช่องทางชำระเงิน (`cash`, `promptpay`, `qr`) |
+| `receipt_no` | `VARCHAR(100)` | `DEFAULT ''` | เลขที่ใบเสร็จรับเงินอย่างเป็นทางการ (`RC-YYYYMM-XXXX`) |
+| `paid_at` | `TIMESTAMPTZ` | | วันเวลาที่รับชำระเงินจริง |
+| `cashier_id` | `BIGINT` | | รหัสเจ้าหน้าที่การเงินผู้รับเงิน |
 | `acc_trans_id_fk` | `BIGINT` | `REFERENCES tw_acc_transactions(id)` | รหัสธุรกรรมการรับชำระเงิน |
 | `recorder_id` | `BIGINT` | | รหัสเจ้าหน้าที่ผู้จดมิเตอร์ |
 | `recorded_at` | `TIMESTAMPTZ` | `DEFAULT NOW()` | วันเวลาที่จดมิเตอร์จริงหน้างาน |
@@ -272,3 +276,4 @@ erDiagram
 | :---: | :--- | :--- | :---: |
 | 2026-11-18 | `000001_water_smart_bill_schema.up.sql` | สร้างตารางหลักของระบบ Water Smart Bill ต่อยอดจาก `pios` พร้อมเพิ่ม `house_no`, Default Avatar support, `client_reading_id` สำหรับ Offline Sync, และ `reading_photo_url` / `ocr_confidence` สำหรับระบบ OCR | [ADR 0002](../adr/0002-water-smart-bill-system-architecture.md), [ADR 0003](../adr/0003-offline-first-sync-bluetooth-escpos-and-hybrid-ocr.md) |
 | 2026-11-18 | `000002_enable_rls.up.sql` | เปิดใช้งาน PostgreSQL Row-Level Security (RLS) แยกข้อมูลตาม `org_id` | [ADR 0002](../adr/0002-water-smart-bill-system-architecture.md) |
+| 2026-11-18 | `000003_add_payment_receipt_fields.up.sql` | เพิ่มคอลัมน์ `payment_method`, `receipt_no`, `paid_at`, `cashier_id` บนตาราง `tw_invoice` สำหรับระบบโต๊ะการเงินและออกใบเสร็จ | [ADR 0006](../adr/0006-finance-cashier-invoicing-receipts-and-csv-export.md) |
