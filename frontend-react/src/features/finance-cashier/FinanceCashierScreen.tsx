@@ -1,10 +1,13 @@
 import { useFinanceCashier } from './useFinanceCashier'
+import type { WaterInvoiceItem } from '@/shared/types/waterSmartBill'
 
 export interface FinanceCashierScreenProps {
   token?: string
+  invoices?: WaterInvoiceItem[]
+  onInvoicePaid?: (inv: WaterInvoiceItem) => void
 }
 
-export function FinanceCashierScreen({ token }: FinanceCashierScreenProps) {
+export function FinanceCashierScreen({ token, invoices, onInvoicePaid }: FinanceCashierScreenProps) {
   const {
     filteredInvoices,
     report,
@@ -29,7 +32,7 @@ export function FinanceCashierScreen({ token }: FinanceCashierScreenProps) {
     isProcessing,
     message,
     loadData,
-  } = useFinanceCashier(token)
+  } = useFinanceCashier({ token, initialInvoices: invoices, onInvoicePaid })
 
   return (
     <div className="space-y-6">

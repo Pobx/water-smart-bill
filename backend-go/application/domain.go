@@ -2,12 +2,9 @@ package application
 
 import (
 	"errors"
-	"fmt"
-	"html"
 	"net/url"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 var (
@@ -78,31 +75,19 @@ func ResolveAvatarURL(imageURL, firstName, lastName string) string {
 	return "/api/v1/avatars/default?name=" + url.QueryEscape(fullName)
 }
 
-// GenerateDefaultAvatarSVG generates a clean SVG avatar with initials when a homeowner has no uploaded photo.
+// GenerateDefaultAvatarSVG generates a clean SVG avatar when a homeowner has no uploaded photo.
 func GenerateDefaultAvatarSVG(name string) string {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		trimmed = "U"
-	}
-	parts := strings.Fields(trimmed)
-	var initials string
-	if len(parts) >= 2 {
-		r1, _ := utf8.DecodeRuneInString(parts[0])
-		r2, _ := utf8.DecodeRuneInString(parts[1])
-		initials = string(r1) + string(r2)
-	} else {
-		r1, _ := utf8.DecodeRuneInString(parts[0])
-		initials = string(r1)
-	}
-	escaped := html.EscapeString(strings.ToUpper(initials))
-	return fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Default Avatar">
+	_ = name
+	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Default Avatar">
   <defs>
-    <linearGradient id="waterGrad" x1="0%%" y1="0%%" x2="100%%" y2="100%%">
-      <stop offset="0%%" stop-color="#0284c7" />
-      <stop offset="100%%" stop-color="#1d4ed8" />
+    <linearGradient id="waterGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
     </linearGradient>
   </defs>
   <rect width="120" height="120" rx="60" fill="url(#waterGrad)" />
-  <text x="50%%" y="54%%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="Inter, Sarabun, sans-serif" font-size="42" font-weight="700">%s</text>
-</svg>`, escaped)
+  <!-- Modern user avatar silhouette -->
+  <circle cx="60" cy="46" r="20" fill="#ffffff" opacity="0.95" />
+  <path d="M26,104 C26,82 40,74 60,74 C80,74 94,82 94,104 Z" fill="#ffffff" opacity="0.95" />
+</svg>`
 }

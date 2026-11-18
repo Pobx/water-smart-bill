@@ -44,6 +44,34 @@ describe('Water Smart Bill E2E User Journeys (shadcn/ui + v0.app style)', () => 
     })
   })
 
+  it('navigates to Tariffs & Meters tab and verifies progressive tiers and meter table', async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /อัตราค่าน้ำ & ทะเบียนมิเตอร์น้ำ/i }))
+
+    expect(screen.getByText(/อัตราค่าน้ำขั้นบันได/i)).toBeInTheDocument()
+    expect(screen.getByText(/1 - 10 หน่วย/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/HSG-0001/i).length).toBeGreaterThan(0)
+  })
+
+  it('navigates to Finance & Cashier tab, searches invoices, and simulates counter payment', async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /การเงิน & รับชำระ/i }))
+
+    expect(screen.getByText(/ระบบการเงินและรับชำระค่าน้ำ/i)).toBeInTheDocument()
+    expect(screen.getByText(/ยอดจัดเก็บรวม/i)).toBeInTheDocument()
+
+    // Filter by unpaid
+    fireEvent.click(screen.getByRole('button', { name: /รอชำระ/i }))
+
+    // Search by house number
+    const searchInput = screen.getByPlaceholderText(/ค้นหาเลขที่บิล, บ้านเลขที่/i)
+    fireEvent.change(searchInput, { target: { value: '101/1' } })
+
+    expect(screen.getByText(/บ้านเลขที่ 101\/1/i)).toBeInTheDocument()
+  })
+
   it('renders LINE LIFF Resident Portal for homeowners to inspect water bills and payment history', async () => {
     render(<App />)
 

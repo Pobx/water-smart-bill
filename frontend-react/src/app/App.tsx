@@ -7,7 +7,15 @@ import { LiffPortalScreen, useLiffPortal } from '@/features/liff-portal'
 import { FinanceCashierScreen } from '@/features/finance-cashier'
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'master' | 'tariffs' | 'reader' | 'cashier' | 'liff'>('master')
+  const [activeTab, setActiveTab] = useState<'master' | 'tariffs' | 'reader' | 'cashier' | 'liff'>(() => {
+    if (typeof window !== 'undefined') {
+      const param = new URLSearchParams(window.location.search).get('tab')
+      if (param === 'tariffs' || param === 'reader' || param === 'cashier' || param === 'liff') {
+        return param
+      }
+    }
+    return 'master'
+  })
 
   // Vertical Slice 1: Auth & Redis JWT Blacklist
   const auth = useAuth()
@@ -173,7 +181,17 @@ export function App() {
           />
         )}
 
-        {activeTab === 'cashier' && <FinanceCashierScreen token={auth.jwtToken} />}
+        {activeTab === 'cashier' && (
+          <FinanceCashierScreen
+            token={auth.jwtToken}
+            invoices={liffPortal.invoices}
+            onInvoicePaid={(updated) =>
+              liffPortal.setInvoices((prev) =>
+                prev.map((inv) => (inv.id === updated.id ? updated : inv))
+              )
+            }
+          />
+        )}
 
         {activeTab === 'liff' && (
           <LiffPortalScreen

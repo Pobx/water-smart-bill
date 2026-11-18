@@ -51,8 +51,8 @@ export function LiffPortalScreen({
         {liffInvoices.map((inv) => (
           <div key={inv.id} className="rounded-2xl border border-slate-200 p-4">
             <div className="flex items-center justify-between">
-              <span className="font-mono text-xs font-bold text-slate-900">
-                งวด {inv.period_name} ({inv.inv_no})
+              <span className="text-xs font-bold text-slate-900">
+                งวด <span className="font-mono">{inv.period_name}</span> (<span className="font-mono">{inv.inv_no}</span>)
               </span>
               <span
                 className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
@@ -65,14 +65,14 @@ export function LiffPortalScreen({
               </span>
             </div>
             <div className="mt-2 grid grid-cols-3 text-xs text-slate-600">
-              <div>ครั้งก่อน: {inv.lastmeter}</div>
-              <div>ครั้งนี้: {inv.currentmeter}</div>
-              <div className="font-semibold text-sky-700">ใช้ไป: {inv.water_used} m³</div>
+              <div>ครั้งก่อน: <span className="font-mono">{inv.lastmeter}</span></div>
+              <div>ครั้งนี้: <span className="font-mono">{inv.currentmeter}</span></div>
+              <div className="font-semibold text-sky-700">ใช้ไป: <span className="font-mono">{inv.water_used}</span> m³</div>
             </div>
             <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5">
               <span className="text-xs text-slate-500">ยอดรวมสุทธิ (รวม VAT 7%)</span>
-              <span className="font-mono text-base font-extrabold text-slate-900">
-                {inv.totalpaid.toFixed(2)} บาท
+              <span className="text-base font-extrabold text-slate-900">
+                <span className="font-mono">฿{inv.totalpaid.toFixed(2)}</span>
               </span>
             </div>
           </div>

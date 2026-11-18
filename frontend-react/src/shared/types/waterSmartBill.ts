@@ -77,11 +77,7 @@ export interface InvoiceItem {
 export type WaterInvoiceItem = InvoiceItem
 
 export function makeDefaultAvatarDataUri(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  const initials =
-    parts.length >= 2
-      ? `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`
-      : (parts[0]?.slice(0, 2) ?? 'อบ')
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" rx="60" fill="#0284c7"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="40" font-weight="700">${initials}</text></svg>`
+  void name
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" rx="60" fill="#0284c7"/><circle cx="60" cy="46" r="20" fill="#ffffff" opacity="0.95"/><path d="M26,104 C26,82 40,74 60,74 C80,74 94,82 94,104 Z" fill="#ffffff" opacity="0.95"/></svg>`
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
