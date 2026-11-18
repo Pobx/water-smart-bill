@@ -30,21 +30,21 @@ Accepted (วันที่ 2026-11-18)
   ```text
   backend-go/
   ├── application/                       # Core Business Layer (Zero HTTP/Echo/SQL driver dependencies)
-  │   ├── tabwater.go                    # Domain Entities & Interfaces + IsValid() validation methods
+  │   ├── water_bill.go                    # Domain Entities & Interfaces + IsValid() validation methods
   │   ├── domain.go                      # Progressive Tariff Calculator, Avatar Resolver & Core Rules
   │   ├── ports/
-  │   │   ├── tabwater_persistence.go    # Outbound Ports: WaterBillRepositoryInterface, TokenVerifierInterface, TokenBlacklistInterface
-  │   │   └── tabwater_services_port.go  # Inbound Service Port: WaterBillServiceInterface
+  │   │   ├── water_bill_persistence.go    # Outbound Ports: WaterBillRepositoryInterface, TokenVerifierInterface, TokenBlacklistInterface
+  │   │   └── water_bill_services_port.go  # Inbound Service Port: WaterBillServiceInterface
   │   └── services/
-  │       └── tabwater_service.go        # Service Implementation: WaterBillService (implements WaterBillServiceInterface)
+  │       └── water_bill_service.go        # Service Implementation: WaterBillService (implements WaterBillServiceInterface)
   └── adapters/                          # Outer Adapters Layer (Inbound Web REST + Outbound Persistence/Auth)
       ├── dto/
-      │   └── tabwater_dto.go            # Data Transfer Objects with Bind() and ConvertToEntity()
+      │   └── water_bill_dto.go            # Data Transfer Objects with Bind() and ConvertToEntity()
       ├── web/
       │   └── rest/
       │       ├── server.go              # Echo Server, Route Wiring, Non-Prod Swagger Gate & Auth Middleware
       │       └── handler/
-      │           └── tabwater_rest.go   # Echo REST Handlers coupled strictly to ports.WaterBillServiceInterface & dto
+      │           └── water_bill_rest.go   # Echo REST Handlers coupled strictly to ports.WaterBillServiceInterface & dto
       ├── sqldb/                         # PostgreSQL Outbound Adapter (implements ports.WaterBillRepositoryInterface)
       ├── memory/                        # In-Memory Outbound Adapter for demo/testing
       ├── keycloak/                      # Keycloak OIDC Token Verifier Outbound Adapter
