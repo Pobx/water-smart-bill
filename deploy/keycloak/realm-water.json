@@ -1,0 +1,47 @@
+{
+  "realm": "water-smart-bill",
+  "enabled": true,
+  "displayName": "Water Smart Bill — ระบบประปา อบต.",
+  "loginTheme": "water-smart-bill",
+  "roles": {
+    "realm": [
+      { "name": "super_admin" },
+      { "name": "admin" },
+      { "name": "tabwater_staff" },
+      { "name": "finance_staff" },
+      { "name": "user" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "water-web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost/*", "http://localhost:5173/*"],
+      "webOrigins": ["*"]
+    },
+    {
+      "clientId": "water-api",
+      "enabled": true,
+      "bearerOnly": true
+    }
+  ],
+  "users": [
+    {
+      "username": "somchai_staff",
+      "enabled": true,
+      "firstName": "สมชาย",
+      "lastName": "การประปา",
+      "email": "somchai@hsg-sao.go.th",
+      "attributes": {
+        "org_id": ["1"]
+      },
+      "credentials": [
+        { "type": "password", "value": "water1234", "temporary": false }
+      ],
+      "realmRoles": ["admin", "tabwater_staff", "finance_staff"]
+    }
+  ]
+}

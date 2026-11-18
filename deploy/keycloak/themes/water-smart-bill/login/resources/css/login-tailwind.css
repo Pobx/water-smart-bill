@@ -1,0 +1,84 @@
+/* Keycloak Custom Login Theme styled with Tailwind CSS + shadcn/ui palette */
+body.login-pf {
+  background: linear-gradient(135deg, #f8fafc 0%, #e0f2fe 50%, #f1f5f9 100%);
+  font-family: 'Inter', 'Sarabun', system-ui, -apple-system, sans-serif;
+  color: #0f172a;
+}
+
+.wsb-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.wsb-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.wsb-title {
+  margin-top: 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.wsb-subtitle {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.wsb-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 2rem;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
+}
+
+.wsb-field {
+  margin-bottom: 1rem;
+}
+
+.wsb-label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.wsb-input {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: #0f172a;
+}
+
+.wsb-input:focus {
+  outline: 2px solid #0284c7;
+  border-color: #0284c7;
+}
+
+.wsb-btn-primary {
+  width: 100%;
+  border: none;
+  border-radius: 0.75rem;
+  background-color: #0284c7;
+  color: #ffffff;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.wsb-btn-primary:hover {
+  background-color: #0369a1;
+}
