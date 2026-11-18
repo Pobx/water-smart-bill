@@ -1,0 +1,232 @@
+openapi: 3.0.3
+info:
+  title: Water Smart Bill API (ระบบจัดการค่าน้ำประปาสำหรับ อบต.)
+  description: |
+    RESTful API สำหรับระบบบริหารจัดการค่าน้ำประปา อบต. (ต่อยอดจากระบบ PIOS)
+    - เปิดให้เข้าถึง Swagger เฉพาะ Non-Production (`APP_ENV != production`)
+    - รองรับ Keycloak OIDC + Redis JWT Blacklist เมื่อ Logout
+    - รองรับ Offline-First Sync, AI/OCR Meter Reading, Bluetooth Receipt Printing และ LINE LIFF
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local / Demo Gateway
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+  /api/v1/auth/logout:
+    post:
+      summary: Logout and blacklist current JWT JTI in Redis
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token revoked and blacklisted
+  /api/v1/me:
+    get:
+      summary: Current authenticated user profile & claims
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Authenticated profile
+        '401':
+          description: Unauthorized or Blacklisted Token
+  /api/v1/organizations:
+    get:
+      summary: ดึงข้อมูล อบต. (SAO Organization)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ข้อมูล อบต.
+    post:
+      summary: บันทึก/แก้ไขข้อมูล อบต.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: บันทึกข้อมูล อบต. สำเร็จ
+  /api/v1/locations/tambons:
+    get:
+      summary: ดึงข้อมูลจังหวัด อำเภอ และตำบล
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: รายการตำบล
+  /api/v1/zones:
+    get:
+      summary: ดึงข้อมูลหมู่บ้าน (Zones) และคุ้ม/สายจดมิเตอร์ (Subzones)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: รายการหมู่บ้าน
+    post:
+      summary: เพิ่มข้อมูลหมู่บ้านและสายจดมิเตอร์
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: สร้างหมู่บ้านสำเร็จ
+  /api/v1/users:
+    get:
+      summary: ดึงข้อมูลเจ้าของบ้านและบ้านเลขที่ (พร้อม Default Avatar อัตโนมัติ)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: รายชื่อเจ้าของบ้าน
+    post:
+      summary: บันทึกข้อมูลเจ้าของบ้านและบ้านเลขที่
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: บันทึกเจ้าของบ้านสำเร็จ
+  /api/v1/users/{id}/avatar:
+    post:
+      summary: อัปโหลดรูป Avatar เจ้าของบ้าน
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: อัปเดตรูป Avatar สำเร็จ
+  /api/v1/avatars/default:
+    get:
+      summary: สร้างรูป Default Avatar (SVG) อัตโนมัติเมื่อไม่ได้อัปโหลดรูป
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SVG Image
+  /api/v1/tabwater/rate-configs:
+    get:
+      summary: ดึงตารางอัตราค่าน้ำแบบขั้นบันไดและค่ารักษามิเตอร์
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ตารางอัตราค่าน้ำ
+    post:
+      summary: บันทึกตารางอัตราค่าน้ำและค่าธรรมเนียม
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: บันทึกสำเร็จ
+  /api/v1/tabwater/periods:
+    get:
+      summary: ดึงรายการงวดบิลประจำเดือน
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: รายการงวดบิล
+    post:
+      summary: เปิดงวดบิลประจำเดือนใหม่
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: เปิดงวดบิลสำเร็จ
+  /api/v1/tabwater/meters:
+    get:
+      summary: ดึงทะเบียนมิเตอร์น้ำประปา
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: รายการมิเตอร์น้ำ
+    post:
+      summary: ขึ้นทะเบียนมิเตอร์น้ำประปาใหม่
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: ขึ้นทะเบียนมิเตอร์สำเร็จ
+  /api/v1/tabwater/offline-bundle:
+    get:
+      summary: ดึงชุดข้อมูลสำหรับโหมด Offline-First (มิเตอร์ + เรทค่าน้ำ + หมู่บ้าน + รอบบิล)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Offline Bundle
+  /api/v1/tabwater/ocr/meter-read:
+    post:
+      summary: อ่านเลขมิเตอร์น้ำจากรูปถ่ายด้วย AI / OCR
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ผลลัพธ์การอ่านเลขมิเตอร์
+  /api/v1/tabwater/readings:
+    post:
+      summary: บันทึกเลขมิเตอร์น้ำ คำนวณค่าน้ำ และออกใบแจ้งหนี้
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: ออกใบแจ้งหนี้สำเร็จ
+  /api/v1/tabwater/readings/sync:
+    post:
+      summary: ซิงค์ข้อมูลการจดมิเตอร์แบบ Batch จากโหมด Offline (Idempotent)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ซิงค์ข้อมูลสำเร็จ
+  /api/v1/tabwater/invoices:
+    get:
+      summary: ดึงรายการใบแจ้งหนี้และใบเสร็จค่าน้ำประปา
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: รายการใบแจ้งหนี้
+  /api/v1/tabwater/invoices/{id}/pay:
+    post:
+      summary: รับชำระเงินค่าน้ำประปาและออกใบเสร็จ
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: ชำระเงินสำเร็จ
+  /api/v1/liff/bills:
+    get:
+      summary: สำหรับเจ้าของบ้านดูข้อมูลค่าน้ำและประวัติการชำระเงินผ่าน LINE LIFF
+      responses:
+        '200':
+          description: ข้อมูลพอร์ทัลลูกบ้าน
+  /api/v1/liff/link:
+    post:
+      summary: ผูกบัญชี LINE LIFF ของเจ้าของบ้านเข้ากับเลขมิเตอร์/บ้านเลขที่
+      responses:
+        '200':
+          description: ผูกบัญชีสำเร็จ

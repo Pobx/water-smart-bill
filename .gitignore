@@ -2,6 +2,11 @@
 node_modules/
 vendor/
 
+# Build outputs
+dist/
+build/
+frontend-react/dist/
+
 # Operating System
 .DS_Store
 Thumbs.db

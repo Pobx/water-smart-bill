@@ -1,0 +1,833 @@
+package memory
+
+import (
+	"context"
+	"math"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/pobx/water-smart-bill/backend-go/internal/domain"
+)
+
+func intPtr(v int) *int { return &v }
+
+type Store struct {
+	mu          sync.RWMutex
+	org         domain.Organization
+	tambons     []domain.TambonInfo
+	zones       []domain.Zone
+	homeowners  []domain.HomeownerUser
+	rateConfig  domain.MeterRateConfig
+	periods     []domain.InvoicePeriod
+	meters      []domain.WaterMeter
+	invoices    []domain.WaterInvoice
+	nextZoneID  int64
+	nextSubID   int64
+	nextUserID  int64
+	nextPeriod  int64
+	nextMeterID int64
+	nextInvID   int64
+}
+
+func NewStore() *Store {
+	s := &Store{
+		org: domain.Organization{
+			ID:                1,
+			Code:              "HSG1",
+			Name:              "องค์การบริหารส่วนตำบลห้องแซง",
+			Address:           "99 หมู่ 1 ต.ห้องแซง อ.เลิงนกทา จ.ยโสธร",
+			TambonID:          350805,
+			TambonName:        "ห้องแซง",
+			DistrictID:        3508,
+			DistrictName:      "เลิงนกทา",
+			ProvinceID:        35,
+			ProvinceName:      "ยโสธร",
+			Zipcode:           "35120",
+			Phone:             "045-777-111",
+			DeptName:          "กองการประปา อบต.ห้องแซง",
+			HeadName:          "นายสมชาย รักท้องถิ่น",
+			FinHeadName:       "นางสุดา การคลัง",
+			TwHeadName:        "นายวิชัย ประปาดี",
+			LogoImg:           "/api/v1/avatars/default?name=SAO",
+			MeterPrefix:       "HSG",
+			CutMeterThreshold: 3,
+			VatRate:           7.0,
+		},
+		tambons: []domain.TambonInfo{
+			{
+				TambonID:     350805,
+				TambonName:   "ห้องแซง",
+				DistrictID:   3508,
+				DistrictName: "เลิงนกทา",
+				ProvinceID:   35,
+				ProvinceName: "ยโสธร",
+				Zipcode:      "35120",
+			},
+			{
+				TambonID:     470301,
+				TambonName:   "เต่างอย",
+				DistrictID:   4703,
+				DistrictName: "เต่างอย",
+				ProvinceID:   47,
+				ProvinceName: "สกลนคร",
+				Zipcode:      "47260",
+			},
+		},
+		zones: []domain.Zone{
+			{
+				ID:         1,
+				OrgID:      1,
+				TambonID:   350805,
+				TambonName: "ห้องแซง",
+				MooNo:      1,
+				ZoneName:   "หมู่ที่ 1 บ้านห้องแซงเหนือ",
+				Location:   "โซนเหนือ ต.ห้องแซง",
+				Status:     "active",
+				Subzones: []domain.Subzone{
+					{ID: 1, OrgID: 1, ZoneID: 1, SubzoneName: "สายจดที่ 1 (คุ้มวัดเหนือ)", Status: "active"},
+				},
+			},
+			{
+				ID:         2,
+				OrgID:      1,
+				TambonID:   350805,
+				TambonName: "ห้องแซง",
+				MooNo:      2,
+				ZoneName:   "หมู่ที่ 2 บ้านห้องแซงใต้",
+				Location:   "โซนใต้ ต.ห้องแซง",
+				Status:     "active",
+				Subzones: []domain.Subzone{
+					{ID: 2, OrgID: 1, ZoneID: 2, SubzoneName: "สายจดที่ 2 (คุ้มตลาดใต้)", Status: "active"},
+				},
+			},
+		},
+		homeowners: []domain.HomeownerUser{
+			{
+				ID:           1,
+				OrgID:        1,
+				Username:     "sommai_01",
+				Prefix:       "นาย",
+				FirstName:    "สมหมาย",
+				LastName:     "ใจดี",
+				HouseNo:      "101/1",
+				Address:      "101/1 หมู่ที่ 1 ต.ห้องแซง อ.เลิงนกทา จ.ยโสธร",
+				ZoneID:       1,
+				ZoneName:     "หมู่ที่ 1 บ้านห้องแซงเหนือ",
+				SubzoneID:    1,
+				SubzoneName:  "สายจดที่ 1 (คุ้มวัดเหนือ)",
+				TambonCode:   350805,
+				TambonName:   "ห้องแซง",
+				DistrictCode: 3508,
+				ProvinceCode: 35,
+				Phone:        "081-234-5678",
+				LineUserID:   "U1001_SOMMAI",
+				ImageURL:     "",
+				AvatarURL:    domain.ResolveAvatarURL("", "สมหมาย", "ใจดี"),
+				Status:       "active",
+			},
+			{
+				ID:           2,
+				OrgID:        1,
+				Username:     "malee_02",
+				Prefix:       "นาง",
+				FirstName:    "มาลี",
+				LastName:     "ศรีสุข",
+				HouseNo:      "205/4",
+				Address:      "205/4 หมู่ที่ 2 ต.ห้องแซง อ.เลิงนกทา จ.ยโสธร",
+				ZoneID:       2,
+				ZoneName:     "หมู่ที่ 2 บ้านห้องแซงใต้",
+				SubzoneID:    2,
+				SubzoneName:  "สายจดที่ 2 (คุ้มตลาดใต้)",
+				TambonCode:   350805,
+				TambonName:   "ห้องแซง",
+				DistrictCode: 3508,
+				ProvinceCode: 35,
+				Phone:        "089-876-5432",
+				LineUserID:   "U1002_MALEE",
+				ImageURL:     "",
+				AvatarURL:    domain.ResolveAvatarURL("", "มาลี", "ศรีสุข"),
+				Status:       "active",
+			},
+		},
+		rateConfig: domain.MeterRateConfig{
+			ID:            1,
+			OrgID:         1,
+			MeterTypeID:   1,
+			MeterTypeName: "ประปาครัวเรือน (4 หุน)",
+			PricingType:   "progressive",
+			ReserveFee:    10.0,
+			VatPercent:    7.0,
+			Tiers: []domain.RateTier{
+				{TierOrder: 1, MinUnits: 1, MaxUnits: intPtr(10), RatePerUnit: 5.0, Comment: "หน่วยที่ 1 - 10 (5 บาท/หน่วย)"},
+				{TierOrder: 2, MinUnits: 11, MaxUnits: intPtr(20), RatePerUnit: 7.0, Comment: "หน่วยที่ 11 - 20 (7 บาท/หน่วย)"},
+				{TierOrder: 3, MinUnits: 21, MaxUnits: intPtr(50), RatePerUnit: 10.0, Comment: "หน่วยที่ 21 - 50 (10 บาท/หน่วย)"},
+				{TierOrder: 4, MinUnits: 51, MaxUnits: nil, RatePerUnit: 12.0, Comment: "ตั้งแต่ 51 หน่วยขึ้นไป (12 บาท/หน่วย)"},
+			},
+		},
+		periods: []domain.InvoicePeriod{
+			{ID: 1, OrgID: 1, PeriodName: "11/2569", StartDate: "2026-11-01", EndDate: "2026-11-30", Status: "active"},
+			{ID: 2, OrgID: 1, PeriodName: "10/2569", StartDate: "2026-10-01", EndDate: "2026-10-31", Status: "closed"},
+		},
+		meters: []domain.WaterMeter{
+			{
+				MeterID:            1,
+				OrgID:              1,
+				UserID:             1,
+				HomeownerName:      "นายสมหมาย ใจดี",
+				HomeownerAvatarURL: domain.ResolveAvatarURL("", "สมหมาย", "ใจดี"),
+				HouseNo:            "101/1",
+				MeterNumber:        "HSG-0001",
+				FactoryNo:          "SN-2026-0001",
+				SubmeterName:       "นายสมหมาย ใจดี",
+				MeterAddress:       "101/1 หมู่ที่ 1 บ้านห้องแซงเหนือ",
+				UndertakeZoneID:    1,
+				ZoneName:           "หมู่ที่ 1 บ้านห้องแซงเหนือ",
+				UndertakeSubzoneID: 1,
+				SubzoneName:        "สายจดที่ 1 (คุ้มวัดเหนือ)",
+				MeterTypeID:        1,
+				MeterTypeName:      "ประปาครัวเรือน (4 หุน)",
+				Status:             "active",
+				OweCount:           1,
+				CutMeter:           "0",
+				LastMeterRecording: 120,
+			},
+			{
+				MeterID:            2,
+				OrgID:              1,
+				UserID:             2,
+				HomeownerName:      "นางมาลี ศรีสุข",
+				HomeownerAvatarURL: domain.ResolveAvatarURL("", "มาลี", "ศรีสุข"),
+				HouseNo:            "205/4",
+				MeterNumber:        "HSG-0002",
+				FactoryNo:          "SN-2026-0002",
+				SubmeterName:       "นางมาลี ศรีสุข",
+				MeterAddress:       "205/4 หมู่ที่ 2 บ้านห้องแซงใต้",
+				UndertakeZoneID:    2,
+				ZoneName:           "หมู่ที่ 2 บ้านห้องแซงใต้",
+				UndertakeSubzoneID: 2,
+				SubzoneName:        "สายจดที่ 2 (คุ้มตลาดใต้)",
+				MeterTypeID:        1,
+				MeterTypeName:      "ประปาครัวเรือน (4 หุน)",
+				Status:             "active",
+				OweCount:           0,
+				CutMeter:           "0",
+				LastMeterRecording: 85,
+			},
+		},
+		invoices: []domain.WaterInvoice{
+			{
+				ID:              1,
+				InvoiceNo:       "INV-2569-11-0001",
+				ClientReadingID: "seed-uuid-0001",
+				OrgID:           1,
+				OrgName:         "องค์การบริหารส่วนตำบลห้องแซง",
+				MeterID:         1,
+				MeterNumber:     "HSG-0001",
+				HomeownerName:   "นายสมหมาย ใจดี",
+				HouseNo:         "101/1",
+				ZoneName:        "หมู่ที่ 1 บ้านห้องแซงเหนือ",
+				PeriodID:        1,
+				PeriodName:      "11/2569",
+				LastMeter:       105,
+				CurrentMeter:    120,
+				WaterUsed:       15,
+				Paid:            85.00,
+				ReserveMeter:    10.00,
+				Vat:             6.65,
+				TotalPaid:       101.65,
+				ReadingPhotoURL: "",
+				OCRText:         "00120",
+				OCRConfidence:   98.2,
+				Status:          "invoice",
+				RecordedAt:      "2026-11-18T08:00:00Z",
+			},
+			{
+				ID:              2,
+				InvoiceNo:       "INV-2569-10-0002",
+				ClientReadingID: "seed-uuid-0002",
+				OrgID:           1,
+				OrgName:         "องค์การบริหารส่วนตำบลห้องแซง",
+				MeterID:         2,
+				MeterNumber:     "HSG-0002",
+				HomeownerName:   "นางมาลี ศรีสุข",
+				HouseNo:         "205/4",
+				ZoneName:        "หมู่ที่ 2 บ้านห้องแซงใต้",
+				PeriodID:        2,
+				PeriodName:      "10/2569",
+				LastMeter:       75,
+				CurrentMeter:    85,
+				WaterUsed:       10,
+				Paid:            50.00,
+				ReserveMeter:    10.00,
+				Vat:             4.20,
+				TotalPaid:       64.20,
+				ReadingPhotoURL: "",
+				OCRText:         "00085",
+				OCRConfidence:   99.0,
+				Status:          "paid",
+				RecordedAt:      "2026-10-25T09:30:00Z",
+			},
+		},
+		nextZoneID:  3,
+		nextSubID:   3,
+		nextUserID:  3,
+		nextPeriod:  3,
+		nextMeterID: 3,
+		nextInvID:   3,
+	}
+	return s
+}
+
+func (s *Store) GetOrganization(_ context.Context, _ *int64) (domain.Organization, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.org, nil
+}
+
+func (s *Store) UpsertOrganization(_ context.Context, _ int64, cmd domain.UpsertOrganizationCommand) (domain.Organization, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.org.Code = strings.TrimSpace(cmd.Code)
+	s.org.Name = strings.TrimSpace(cmd.Name)
+	s.org.Address = strings.TrimSpace(cmd.Address)
+	if cmd.TambonID > 0 {
+		s.org.TambonID = cmd.TambonID
+	}
+	if cmd.Phone != "" {
+		s.org.Phone = cmd.Phone
+	}
+	if cmd.DeptName != "" {
+		s.org.DeptName = cmd.DeptName
+	}
+	if cmd.HeadName != "" {
+		s.org.HeadName = cmd.HeadName
+	}
+	if cmd.FinHeadName != "" {
+		s.org.FinHeadName = cmd.FinHeadName
+	}
+	if cmd.TwHeadName != "" {
+		s.org.TwHeadName = cmd.TwHeadName
+	}
+	if cmd.MeterPrefix != "" {
+		s.org.MeterPrefix = cmd.MeterPrefix
+	}
+	if cmd.VatRate > 0 {
+		s.org.VatRate = cmd.VatRate
+	}
+	return s.org, nil
+}
+
+func (s *Store) ListTambons(_ context.Context) ([]domain.TambonInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.TambonInfo, len(s.tambons))
+	copy(out, s.tambons)
+	return out, nil
+}
+
+func (s *Store) ListZones(_ context.Context, _ *int64) ([]domain.Zone, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.Zone, len(s.zones))
+	copy(out, s.zones)
+	return out, nil
+}
+
+func (s *Store) CreateZone(_ context.Context, orgID int64, cmd domain.CreateZoneCommand) (domain.Zone, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	zID := s.nextZoneID
+	s.nextZoneID++
+	subID := s.nextSubID
+	s.nextSubID++
+	subName := strings.TrimSpace(cmd.SubzoneName)
+	if subName == "" {
+		subName = "สายจดหลัก (" + strings.TrimSpace(cmd.ZoneName) + ")"
+	}
+	tambonID := cmd.TambonID
+	if tambonID <= 0 {
+		tambonID = 350805
+	}
+	moo := cmd.MooNo
+	if moo <= 0 {
+		moo = int(zID)
+	}
+	z := domain.Zone{
+		ID:         zID,
+		OrgID:      orgID,
+		TambonID:   tambonID,
+		TambonName: "ห้องแซง",
+		MooNo:      moo,
+		ZoneName:   strings.TrimSpace(cmd.ZoneName),
+		Location:   strings.TrimSpace(cmd.Location),
+		Status:     "active",
+		Subzones: []domain.Subzone{
+			{ID: subID, OrgID: orgID, ZoneID: zID, SubzoneName: subName, Status: "active"},
+		},
+	}
+	s.zones = append(s.zones, z)
+	return z, nil
+}
+
+func (s *Store) ListHomeowners(_ context.Context, _ *int64, query string) ([]domain.HomeownerUser, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	q := strings.ToLower(strings.TrimSpace(query))
+	var out []domain.HomeownerUser
+	for _, u := range s.homeowners {
+		u.AvatarURL = domain.ResolveAvatarURL(u.ImageURL, u.FirstName, u.LastName)
+		if q == "" ||
+			strings.Contains(strings.ToLower(u.FirstName), q) ||
+			strings.Contains(strings.ToLower(u.LastName), q) ||
+			strings.Contains(strings.ToLower(u.HouseNo), q) ||
+			strings.Contains(strings.ToLower(u.Username), q) {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) CreateHomeowner(_ context.Context, orgID int64, cmd domain.CreateHomeownerCommand) (domain.HomeownerUser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.nextUserID
+	s.nextUserID++
+
+	zoneID := cmd.ZoneID
+	if zoneID <= 0 {
+		zoneID = 1
+	}
+	zoneName := "หมู่ที่ 1 บ้านห้องแซงเหนือ"
+	subzoneID := cmd.SubzoneID
+	if subzoneID <= 0 {
+		subzoneID = 1
+	}
+	subzoneName := "สายจดที่ 1 (คุ้มวัดเหนือ)"
+	for _, z := range s.zones {
+		if z.ID == zoneID {
+			zoneName = z.ZoneName
+			if len(z.Subzones) > 0 {
+				subzoneID = z.Subzones[0].ID
+				subzoneName = z.Subzones[0].SubzoneName
+			}
+		}
+	}
+	tambonCode := cmd.TambonCode
+	if tambonCode <= 0 {
+		tambonCode = 350805
+	}
+	username := strings.TrimSpace(cmd.Username)
+	if username == "" {
+		username = "home_" + strings.ReplaceAll(strings.TrimSpace(cmd.HouseNo), "/", "_")
+	}
+	prefix := strings.TrimSpace(cmd.Prefix)
+	if prefix == "" {
+		prefix = "คุณ"
+	}
+	addr := strings.TrimSpace(cmd.Address)
+	if addr == "" {
+		addr = strings.TrimSpace(cmd.HouseNo) + " " + zoneName + " ต.ห้องแซง"
+	}
+	u := domain.HomeownerUser{
+		ID:           id,
+		OrgID:        orgID,
+		Username:     username,
+		Prefix:       prefix,
+		FirstName:    strings.TrimSpace(cmd.FirstName),
+		LastName:     strings.TrimSpace(cmd.LastName),
+		HouseNo:      strings.TrimSpace(cmd.HouseNo),
+		Address:      addr,
+		ZoneID:       zoneID,
+		ZoneName:     zoneName,
+		SubzoneID:    subzoneID,
+		SubzoneName:  subzoneName,
+		TambonCode:   tambonCode,
+		TambonName:   "ห้องแซง",
+		DistrictCode: 3508,
+		ProvinceCode: 35,
+		Phone:        strings.TrimSpace(cmd.Phone),
+		LineUserID:   strings.TrimSpace(cmd.LineUserID),
+		ImageURL:     strings.TrimSpace(cmd.ImageURL),
+		AvatarURL:    domain.ResolveAvatarURL(cmd.ImageURL, cmd.FirstName, cmd.LastName),
+		Status:       "active",
+	}
+	s.homeowners = append(s.homeowners, u)
+	return u, nil
+}
+
+func (s *Store) UpdateHomeownerAvatar(_ context.Context, _ *int64, userID int64, avatarURL string) (domain.HomeownerUser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.homeowners {
+		if s.homeowners[i].ID == userID {
+			s.homeowners[i].ImageURL = strings.TrimSpace(avatarURL)
+			s.homeowners[i].AvatarURL = domain.ResolveAvatarURL(avatarURL, s.homeowners[i].FirstName, s.homeowners[i].LastName)
+			return s.homeowners[i], nil
+		}
+	}
+	return domain.HomeownerUser{}, domain.ErrNotFound
+}
+
+func (s *Store) GetActiveRateConfig(_ context.Context, _ *int64) (domain.MeterRateConfig, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rateConfig, nil
+}
+
+func (s *Store) SaveRateConfig(_ context.Context, _ int64, cmd domain.SaveRateConfigCommand) (domain.MeterRateConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.TrimSpace(cmd.MeterTypeName) != "" {
+		s.rateConfig.MeterTypeName = strings.TrimSpace(cmd.MeterTypeName)
+	}
+	s.rateConfig.ReserveFee = cmd.ReserveFee
+	s.rateConfig.VatPercent = cmd.VatPercent
+	tiers := make([]domain.RateTier, len(cmd.Tiers))
+	copy(tiers, cmd.Tiers)
+	s.rateConfig.Tiers = tiers
+	return s.rateConfig, nil
+}
+
+func (s *Store) ListPeriods(_ context.Context, _ *int64) ([]domain.InvoicePeriod, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]domain.InvoicePeriod, len(s.periods))
+	copy(out, s.periods)
+	return out, nil
+}
+
+func (s *Store) CreatePeriod(_ context.Context, orgID int64, cmd domain.CreateInvoicePeriodCommand) (domain.InvoicePeriod, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.nextPeriod
+	s.nextPeriod++
+	start := strings.TrimSpace(cmd.StartDate)
+	if start == "" {
+		start = time.Now().Format("2006-01-02")
+	}
+	end := strings.TrimSpace(cmd.EndDate)
+	if end == "" {
+		end = time.Now().AddDate(0, 1, 0).Format("2006-01-02")
+	}
+	p := domain.InvoicePeriod{
+		ID:         id,
+		OrgID:      orgID,
+		PeriodName: strings.TrimSpace(cmd.PeriodName),
+		StartDate:  start,
+		EndDate:    end,
+		Status:     "active",
+	}
+	s.periods = append([]domain.InvoicePeriod{p}, s.periods...)
+	return p, nil
+}
+
+func (s *Store) ListMeters(_ context.Context, _ *int64, zoneID *int64, query string) ([]domain.WaterMeter, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	q := strings.ToLower(strings.TrimSpace(query))
+	var out []domain.WaterMeter
+	for _, m := range s.meters {
+		if zoneID != nil && *zoneID > 0 && m.UndertakeZoneID != *zoneID {
+			continue
+		}
+		if q == "" ||
+			strings.Contains(strings.ToLower(m.MeterNumber), q) ||
+			strings.Contains(strings.ToLower(m.SubmeterName), q) ||
+			strings.Contains(strings.ToLower(m.HouseNo), q) ||
+			strings.Contains(strings.ToLower(m.MeterAddress), q) {
+			out = append(out, m)
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) CreateMeter(_ context.Context, orgID int64, cmd domain.CreateWaterMeterCommand) (domain.WaterMeter, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := s.nextMeterID
+	s.nextMeterID++
+
+	var owner domain.HomeownerUser
+	for _, u := range s.homeowners {
+		if u.ID == cmd.UserID {
+			owner = u
+			break
+		}
+	}
+	subName := strings.TrimSpace(cmd.SubmeterName)
+	if subName == "" {
+		subName = strings.TrimSpace(owner.Prefix + owner.FirstName + " " + owner.LastName)
+	}
+	addr := strings.TrimSpace(cmd.MeterAddress)
+	if addr == "" {
+		addr = owner.Address
+	}
+	zoneID := cmd.ZoneID
+	if zoneID <= 0 {
+		zoneID = owner.ZoneID
+		if zoneID <= 0 {
+			zoneID = 1
+		}
+	}
+	subID := cmd.SubzoneID
+	if subID <= 0 {
+		subID = owner.SubzoneID
+		if subID <= 0 {
+			subID = 1
+		}
+	}
+	zoneName := owner.ZoneName
+	if zoneName == "" {
+		zoneName = "หมู่ที่ 1 บ้านห้องแซงเหนือ"
+	}
+	subzoneName := owner.SubzoneName
+	if subzoneName == "" {
+		subzoneName = "สายจดที่ 1 (คุ้มวัดเหนือ)"
+	}
+
+	m := domain.WaterMeter{
+		MeterID:            id,
+		OrgID:              orgID,
+		UserID:             cmd.UserID,
+		HomeownerName:      subName,
+		HomeownerAvatarURL: domain.ResolveAvatarURL(owner.ImageURL, owner.FirstName, owner.LastName),
+		HouseNo:            owner.HouseNo,
+		MeterNumber:        strings.TrimSpace(cmd.MeterNumber),
+		FactoryNo:          strings.TrimSpace(cmd.FactoryNo),
+		SubmeterName:       subName,
+		MeterAddress:       addr,
+		UndertakeZoneID:    zoneID,
+		ZoneName:           zoneName,
+		UndertakeSubzoneID: subID,
+		SubzoneName:        subzoneName,
+		MeterTypeID:        1,
+		MeterTypeName:      s.rateConfig.MeterTypeName,
+		Status:             "active",
+		OweCount:           0,
+		CutMeter:           "0",
+		LastMeterRecording: cmd.InitialReading,
+	}
+	s.meters = append(s.meters, m)
+	return m, nil
+}
+
+func (s *Store) RecordMeterReading(_ context.Context, orgID int64, _ int64, cmd domain.RecordMeterReadingCommand) (domain.WaterInvoice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	clientID := strings.TrimSpace(cmd.ClientReadingID)
+	if clientID != "" {
+		for _, existing := range s.invoices {
+			if existing.ClientReadingID == clientID {
+				return existing, nil
+			}
+		}
+	}
+
+	meterIdx := -1
+	for i := range s.meters {
+		if s.meters[i].MeterID == cmd.MeterID {
+			meterIdx = i
+			break
+		}
+	}
+	if meterIdx < 0 {
+		return domain.WaterInvoice{}, domain.ErrNotFound
+	}
+	meter := s.meters[meterIdx]
+	if cmd.CurrentMeter < meter.LastMeterRecording {
+		return domain.WaterInvoice{}, domain.ErrBadRequest
+	}
+
+	unitsUsed := math.Max(0, cmd.CurrentMeter-meter.LastMeterRecording)
+	reserveFee := cmd.ReserveFee
+	if reserveFee <= 0 {
+		reserveFee = s.rateConfig.ReserveFee
+	}
+	vatPct := cmd.VatPercent
+	if vatPct <= 0 {
+		vatPct = s.rateConfig.VatPercent
+	}
+	bill := domain.CalculateProgressiveWaterBill(unitsUsed, s.rateConfig.Tiers, reserveFee, vatPct)
+
+	periodName := "11/2569"
+	for _, p := range s.periods {
+		if p.ID == cmd.PeriodID {
+			periodName = p.PeriodName
+			break
+		}
+	}
+
+	recordedAt := strings.TrimSpace(cmd.RecordedAt)
+	if recordedAt == "" {
+		recordedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+
+	invID := s.nextInvID
+	s.nextInvID++
+	inv := domain.WaterInvoice{
+		ID:              invID,
+		InvoiceNo:       strings.TrimSpace(cmd.InvoiceNo),
+		ClientReadingID: clientID,
+		OrgID:           orgID,
+		OrgName:         s.org.Name,
+		MeterID:         meter.MeterID,
+		MeterNumber:     meter.MeterNumber,
+		HomeownerName:   meter.SubmeterName,
+		HouseNo:         meter.HouseNo,
+		ZoneName:        meter.ZoneName,
+		PeriodID:        cmd.PeriodID,
+		PeriodName:      periodName,
+		LastMeter:       meter.LastMeterRecording,
+		CurrentMeter:    cmd.CurrentMeter,
+		WaterUsed:       bill.UnitsUsed,
+		Paid:            bill.WaterCharge,
+		ReserveMeter:    bill.ReserveFee,
+		Vat:             bill.VatAmount,
+		TotalPaid:       bill.TotalPayable,
+		ReadingPhotoURL: strings.TrimSpace(cmd.ReadingPhotoURL),
+		OCRText:         strings.TrimSpace(cmd.OCRText),
+		OCRConfidence:   cmd.OCRConfidence,
+		Status:          "invoice",
+		RecordedAt:      recordedAt,
+	}
+	s.invoices = append([]domain.WaterInvoice{inv}, s.invoices...)
+	s.meters[meterIdx].LastMeterRecording = cmd.CurrentMeter
+	s.meters[meterIdx].OweCount++
+	return inv, nil
+}
+
+func (s *Store) ListInvoices(_ context.Context, _ *int64, status string, periodID *int64) ([]domain.WaterInvoice, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	st := strings.ToLower(strings.TrimSpace(status))
+	var out []domain.WaterInvoice
+	for _, inv := range s.invoices {
+		if st != "" && strings.ToLower(inv.Status) != st {
+			continue
+		}
+		if periodID != nil && *periodID > 0 && inv.PeriodID != *periodID {
+			continue
+		}
+		out = append(out, inv)
+	}
+	return out, nil
+}
+
+func (s *Store) PayInvoice(_ context.Context, _ *int64, cmd domain.PayWaterInvoiceCommand) (domain.WaterInvoice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.invoices {
+		if s.invoices[i].ID == cmd.InvoiceID {
+			s.invoices[i].Status = "paid"
+			for mIdx := range s.meters {
+				if s.meters[mIdx].MeterID == s.invoices[i].MeterID && s.meters[mIdx].OweCount > 0 {
+					s.meters[mIdx].OweCount--
+				}
+			}
+			return s.invoices[i], nil
+		}
+	}
+	return domain.WaterInvoice{}, domain.ErrNotFound
+}
+
+func (s *Store) GetLiffPortalData(_ context.Context, lineUserID, meterNumber, houseNo string) (domain.LiffResidentPortalData, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.findLiffPortalLocked(lineUserID, meterNumber, houseNo)
+}
+
+func (s *Store) LinkLiffAccount(_ context.Context, cmd domain.LiffLinkAccountCommand) (domain.LiffResidentPortalData, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var targetUserID int64
+	for _, m := range s.meters {
+		if strings.EqualFold(m.MeterNumber, strings.TrimSpace(cmd.MeterNumber)) {
+			targetUserID = m.UserID
+			break
+		}
+	}
+	if targetUserID == 0 {
+		return domain.LiffResidentPortalData{}, domain.ErrNotFound
+	}
+	for i := range s.homeowners {
+		if s.homeowners[i].ID == targetUserID {
+			s.homeowners[i].LineUserID = strings.TrimSpace(cmd.LineUserID)
+			break
+		}
+	}
+	return s.findLiffPortalLocked(cmd.LineUserID, cmd.MeterNumber, cmd.HouseNo)
+}
+
+func (s *Store) findLiffPortalLocked(lineUserID, meterNumber, houseNo string) (domain.LiffResidentPortalData, error) {
+	var owner *domain.HomeownerUser
+	trimmedLine := strings.TrimSpace(lineUserID)
+	trimmedMeter := strings.TrimSpace(meterNumber)
+	trimmedHouse := strings.TrimSpace(houseNo)
+
+	if trimmedLine != "" {
+		for i := range s.homeowners {
+			if strings.EqualFold(s.homeowners[i].LineUserID, trimmedLine) {
+				u := s.homeowners[i]
+				owner = &u
+				break
+			}
+		}
+	}
+	if owner == nil && trimmedMeter != "" {
+		for _, m := range s.meters {
+			if strings.EqualFold(m.MeterNumber, trimmedMeter) {
+				for i := range s.homeowners {
+					if s.homeowners[i].ID == m.UserID {
+						u := s.homeowners[i]
+						owner = &u
+						break
+					}
+				}
+			}
+		}
+	}
+	if owner == nil && trimmedHouse != "" {
+		for i := range s.homeowners {
+			if strings.EqualFold(s.homeowners[i].HouseNo, trimmedHouse) {
+				u := s.homeowners[i]
+				owner = &u
+				break
+			}
+		}
+	}
+	if owner == nil && len(s.homeowners) > 0 {
+		u := s.homeowners[0]
+		owner = &u
+	}
+	if owner == nil {
+		return domain.LiffResidentPortalData{}, domain.ErrNotFound
+	}
+	owner.AvatarURL = domain.ResolveAvatarURL(owner.ImageURL, owner.FirstName, owner.LastName)
+
+	var meters []domain.WaterMeter
+	meterIDs := map[int64]bool{}
+	for _, m := range s.meters {
+		if m.UserID == owner.ID {
+			meters = append(meters, m)
+			meterIDs[m.MeterID] = true
+		}
+	}
+	var invoices []domain.WaterInvoice
+	var unpaidTotal float64
+	for _, inv := range s.invoices {
+		if meterIDs[inv.MeterID] {
+			invoices = append(invoices, inv)
+			if inv.Status != "paid" {
+				unpaidTotal += inv.TotalPaid
+			}
+		}
+	}
+	return domain.LiffResidentPortalData{
+		Homeowner:   *owner,
+		Meters:      meters,
+		Invoices:    invoices,
+		UnpaidTotal: math.Round(unpaidTotal*100) / 100,
+	}, nil
+}
