@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <title>Water Smart Bill — คู่มือการใช้งานระบบบริหารจัดการน้ำประปาอัจฉริยะสำหรับ อบต.</title>
+  <style>
+    @font-face {
+      font-family: 'KanitLocal';
+      src: url('/assets/fonts/kanit-thai-400-normal.woff2') format('woff2'),
+           url('/assets/fonts/kanit-latin-400-normal.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'KanitLocal';
+      src: url('/assets/fonts/kanit-thai-600-normal.woff2') format('woff2'),
+           url('/assets/fonts/kanit-latin-600-normal.woff2') format('woff2');
+      font-weight: 600;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'KanitLocal';
+      src: url('/assets/fonts/kanit-thai-700-normal.woff2') format('woff2'),
+           url('/assets/fonts/kanit-latin-700-normal.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'SarabunLocal';
+      src: url('/assets/fonts/sarabun-thai-400-normal.woff2') format('woff2'),
+           url('/assets/fonts/sarabun-latin-400-normal.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'SarabunLocal';
+      src: url('/assets/fonts/sarabun-thai-700-normal.woff2') format('woff2'),
+           url('/assets/fonts/sarabun-latin-700-normal.woff2') format('woff2');
+      font-weight: 700;
+      font-style: normal;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      background: #070d19;
+      font-family: 'KanitLocal', 'SarabunLocal', sans-serif;
+      color: #f8fafc;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #stage {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      background:
+        radial-gradient(circle at 12% 15%, rgba(14, 165, 233, 0.22), transparent 42%),
+        radial-gradient(circle at 88% 82%, rgba(16, 185, 129, 0.18), transparent 45%),
+        linear-gradient(135deg, #070d19 0%, #0f172a 55%, #091526 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 28px 48px 26px 48px;
+    }
+
+    /* Top Broadcast Header */
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 82px;
+      padding: 0 28px;
+      border-radius: 20px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    }
+
+    .brand-left {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .logo-badge {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #0284c7, #10b981);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      font-weight: 700;
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(14, 165, 233, 0.45);
+    }
+
+    .step-pill {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 999px;
+      background: rgba(14, 165, 233, 0.2);
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      color: #38bdf8;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      margin-bottom: 3px;
+    }
+
+    .scene-title {
+      font-size: 27px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.2;
+    }
+
+    .feature-tag {
+      padding: 10px 20px;
+      border-radius: 12px;
+      background: rgba(16, 185, 129, 0.14);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    /* Main Viewport Container */
+    .viewport-wrap {
+      position: relative;
+      width: 1824px;
+      height: 780px;
+      margin: 0 auto;
+      border-radius: 22px;
+      overflow: hidden;
+      background: #f8fafc;
+      border: 2px solid rgba(148, 163, 184, 0.25);
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+    }
+
+    .screenshot-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+      transform-origin: center top;
+      transition: transform 0.35s ease;
+    }
+
+    /* Dynamic Callout Highlight Box */
+    .highlight-box {
+      position: absolute;
+      border: 4px solid #0ea5e9;
+      border-radius: 18px;
+      background: rgba(14, 165, 233, 0.08);
+      box-shadow:
+        0 0 0 4px rgba(14, 165, 233, 0.28),
+        0 16px 40px rgba(2, 132, 199, 0.35);
+      pointer-events: none;
+    }
+
+    .highlight-label {
+      position: absolute;
+      top: -44px;
+      left: 0;
+      background: linear-gradient(90deg, #0284c7, #0d9488);
+      color: #ffffff;
+      padding: 6px 18px;
+      border-radius: 10px;
+      font-size: 18px;
+      font-weight: 700;
+      white-space: nowrap;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    /* Bottom Subtitle & Timeline Bar */
+    .bottom-bar {
+      height: 122px;
+      border-radius: 20px;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      padding: 16px 32px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    }
+
+    .subtitle-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .voice-wave {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 14px;
+      border-radius: 12px;
+      background: rgba(14, 165, 233, 0.16);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #38bdf8;
+      font-size: 15px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .subtitle-text {
+      font-size: 24px;
+      font-weight: 600;
+      color: #f8fafc;
+      line-height: 1.35;
+    }
+
+    .progress-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .progress-track {
+      flex: 1;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(51, 65, 85, 0.8);
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #38bdf8, #10b981);
+      width: 0%;
+    }
+
+    .time-badge {
+      font-size: 15px;
+      font-weight: 600;
+      color: #94a3b8;
+      min-width: 145px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div
+    id="stage"
+    data-composition="water-smart-bill-tutorial"
+    data-width="1920"
+    data-height="1080"
+    data-fps="30"
+    data-duration="153.23"
+  >
+    <!-- Top Header -->
+    <div class="top-bar">
+      <div class="brand-left">
+        <div class="logo-badge">💧</div>
+        <div>
+          <span id="ui-step" class="step-pill">INTRO</span>
+          <div id="ui-title" class="scene-title">Water Smart Bill</div>
+        </div>
+      </div>
+      <div id="ui-tag" class="feature-tag">SAO Smart Water Platform</div>
+    </div>
+
+    <!-- Center Screenshot & Animated Highlight -->
+    <div class="viewport-wrap">
+      <img id="ui-screenshot" class="screenshot-img" src="/assets/screenshots/screenshot_01_master_data.png" alt="Screen" />
+      <div id="ui-highlight" class="highlight-box" style="display:none;">
+        <div id="ui-highlight-label" class="highlight-label">Highlight</div>
+      </div>
+    </div>
+
+    <!-- Bottom Subtitle & Progress -->
+    <div class="bottom-bar">
+      <div class="subtitle-row">
+        <div class="voice-wave">🔊 พากย์ไทย (TH)</div>
+        <div id="ui-subtitle" class="subtitle-text">กำลังโหลดคำบรรยาย...</div>
+      </div>
+      <div class="progress-row">
+        <div class="progress-track">
+          <div id="ui-progress" class="progress-fill"></div>
+        </div>
+        <div id="ui-time" class="time-badge">00:00 / 02:33</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SCENES = [
+  {
+    "id": "scene_01",
+    "step": "INTRO & SECURITY",
+    "title": "ระบบบริหารจัดการน้ำประปาอัจฉริยะ (Water Smart Bill)",
+    "featureTag": "Keycloak OIDC + Redis JWT Blacklist + Swagger Gate",
+    "screenshot": "assets/screenshots/screenshot_01_master_data.png",
+    "narration_th": "ยินดีต้อนรับสู่ระบบ วอเตอร์ สมาร์ท บิล แพลตฟอร์มบริหารจัดการน้ำประปาและจัดเก็บค่าน้ำอัจฉริยะสำหรับองค์กรปกครองส่วนท้องถิ่น มาพร้อมระบบความปลอดภัย เคย์โคลก โอไอดีซี และการเพิกถอนโทเคนทันทีเมื่อออกจากระบบ",
+    "subtitle_th": "ยินดีต้อนรับสู่ Water Smart Bill — แพลตฟอร์มน้ำประปาอัจฉริยะสำหรับ อบต. พร้อมระบบความปลอดภัย Keycloak OIDC และ JWT Blacklist",
+    "highlights": [
+      {
+        "label": "SAO Platform • ต่อยอดจาก PIOS",
+        "x": 180,
+        "y": 38,
+        "w": 380,
+        "h": 54
+      },
+      {
+        "label": "Swagger API & Logout (Blacklist JWT)",
+        "x": 1390,
+        "y": 24,
+        "w": 490,
+        "h": 58
+      }
+    ],
+    "duration": 22.36,
+    "startTime": 0,
+    "endTime": 22.36,
+    "audioPath": "assets/audio/scene_01.mp3"
+  },
+  {
+    "id": "scene_02",
+    "step": "FEATURE 1 / 5",
+    "title": "1. ข้อมูล อบต. / หมู่บ้าน / เจ้าของบ้าน (Default Avatar)",
+    "featureTag": "Master Data & Automatic SVG Avatar",
+    "screenshot": "assets/screenshots/screenshot_01_master_data.png",
+    "narration_th": "ส่วนที่หนึ่ง การจัดการข้อมูลพื้นฐาน เจ้าหน้าที่สามารถตั้งค่าข้อมูล อบต. แบ่งเขตหมู่บ้านและสายจดมิเตอร์ รวมถึงลงทะเบียนเจ้าของบ้านและบ้านเลขที่ โดยหากไม่ได้อัปโหลดรูปภาพ ระบบจะสร้างรูปดีฟอลต์อวตารให้อัตโนมัติทันที",
+    "subtitle_th": "ฟีเจอร์ที่ 1: จัดการข้อมูล อบต. เขตหมู่บ้าน สายจดมิเตอร์ และทะเบียนเจ้าของบ้าน พร้อมสร้างรูป Default Avatar อัตโนมัติ",
+    "highlights": [
+      {
+        "label": "ข้อมูล อบต. และเขตหมู่บ้าน (Zones)",
+        "x": 55,
+        "y": 180,
+        "w": 710,
+        "h": 560
+      },
+      {
+        "label": "ทะเบียนเจ้าของบ้าน + Default Avatar",
+        "x": 830,
+        "y": 180,
+        "w": 1035,
+        "h": 560
+      }
+    ],
+    "duration": 22.31,
+    "startTime": 22.36,
+    "endTime": 44.67,
+    "audioPath": "assets/audio/scene_02.mp3"
+  },
+  {
+    "id": "scene_03",
+    "step": "FEATURE 2 / 5",
+    "title": "2. อัตราค่าน้ำขั้นบันได & ทะเบียนมิเตอร์น้ำประปา",
+    "featureTag": "Progressive Tariff Tiers & Water Meters",
+    "screenshot": "assets/screenshots/screenshot_02_tariffs_meters.png",
+    "narration_th": "ส่วนที่สอง การกำหนดโครงสร้างอัตราค่าน้ำแบบขั้นบันได รองรับการตั้งค่ารักษามาตรวัดน้ำ ภาษีมูลค่าเพิ่ม การเปิดงวดบิลประจำเดือน และการขึ้นทะเบียนมิเตอร์น้ำเพื่อผูกกับบ้านเลขที่ของลูกบ้านแต่ละราย",
+    "subtitle_th": "ฟีเจอร์ที่ 2: กำหนดอัตราค่าน้ำแบบขั้นบันได (Tier 1–4) ค่ารักษามิเตอร์ VAT 7% เปิดงวดบิล และผูกทะเบียนมิเตอร์น้ำ",
+    "highlights": [
+      {
+        "label": "อัตราค่าน้ำขั้นบันได Tier 1–4 & VAT 7%",
+        "x": 55,
+        "y": 180,
+        "w": 860,
+        "h": 560
+      },
+      {
+        "label": "ทะเบียนมิเตอร์น้ำประปา (HSG-0001, HSG-0002)",
+        "x": 980,
+        "y": 180,
+        "w": 885,
+        "h": 560
+      }
+    ],
+    "duration": 19.2,
+    "startTime": 44.67,
+    "endTime": 63.87,
+    "audioPath": "assets/audio/scene_03.mp3"
+  },
+  {
+    "id": "scene_04",
+    "step": "FEATURE 3 / 5",
+    "title": "3. จดมิเตอร์ภาคสนาม (Offline-First + AI OCR + Bluetooth)",
+    "featureTag": "Offline Sync Queue + AI OCR + ESC/POS Thermal Printer",
+    "screenshot": "assets/screenshots/screenshot_03_field_reader.png",
+    "narration_th": "ส่วนที่สาม แอปพลิเคชันจดมิเตอร์น้ำภาคสนาม ออกแบบมาให้ทำงานแบบออฟไลน์เฟิร์สในพื้นที่อับสัญญาณ มีระบบ เอไอ โอซีอาร์ ช่วยอ่านตัวเลขจากภาพถ่ายหน้าปัดมิเตอร์ คำนวณค่าน้ำทันที พร้อมสั่งพิมพ์ใบแจ้งหนี้ผ่านเครื่องพิมพ์บลูทูธพกพา และซิงค์ข้อมูลขึ้นเซิร์ฟเวอร์เมื่อมีสัญญาณอินเทอร์เน็ต",
+    "subtitle_th": "ฟีเจอร์ที่ 3: จดมิเตอร์แบบ Offline-First สแกนเลขหน้าปัดด้วย AI OCR คำนวณค่าน้ำสด และพิมพ์บิลผ่าน Bluetooth ESC/POS",
+    "highlights": [
+      {
+        "label": "AI OCR อ่านเลขมิเตอร์ & คำนวณค่าน้ำทันที",
+        "x": 55,
+        "y": 180,
+        "w": 1030,
+        "h": 480
+      },
+      {
+        "label": "คิวซิงค์ข้อมูล Offline-First (Idempotency Key)",
+        "x": 1135,
+        "y": 180,
+        "w": 730,
+        "h": 480
+      }
+    ],
+    "duration": 28.16,
+    "startTime": 63.87,
+    "endTime": 92.03,
+    "audioPath": "assets/audio/scene_04.mp3"
+  },
+  {
+    "id": "scene_05",
+    "step": "FEATURE 4 / 5",
+    "title": "4. ระบบการเงินและรับชำระค่าน้ำ (Finance & Cashier Desk)",
+    "featureTag": "Cash/PromptPay Collection + Official Receipt + CSV Export",
+    "screenshot": "assets/screenshots/screenshot_04_cashier_desk.png",
+    "narration_th": "ส่วนที่สี่ ระบบการเงินและเคาน์เตอร์รับชำระค่าน้ำประจำสำนักงาน อบต. แสดงแดชบอร์ดสรุปยอดจัดเก็บแบบเรียลไทม์ ค้นหาบิลสะดวกรวดเร็ว รองรับการรับชำระทั้งเงินสดพร้อมคำนวณเงินทอน และคิวอาร์พร้อมเพย์ ออกใบเสร็จรับเงินทางการ และส่งออกรายงานซีเอสวีเพื่อสรุปบัญชีได้ทันที",
+    "subtitle_th": "ฟีเจอร์ที่ 4: เคาน์เตอร์การเงิน อบต. สรุปยอดจัดเก็บ รับชำระเงินสด/QR PromptPay ออกใบเสร็จรับเงิน และส่งออก CSV",
+    "highlights": [
+      {
+        "label": "แดชบอร์ดสรุปยอดจัดเก็บ & ส่งออกรายงาน CSV",
+        "x": 45,
+        "y": 160,
+        "w": 1830,
+        "h": 295
+      },
+      {
+        "label": "ตารางรับชำระเงิน & ออกใบเสร็จรับเงิน (RC)",
+        "x": 45,
+        "y": 480,
+        "w": 1830,
+        "h": 310
+      }
+    ],
+    "duration": 27.64,
+    "startTime": 92.03,
+    "endTime": 119.67,
+    "audioPath": "assets/audio/scene_05.mp3"
+  },
+  {
+    "id": "scene_06",
+    "step": "FEATURE 5 / 5",
+    "title": "5. ระบบ LINE LIFF สำหรับลูกบ้าน (Resident Portal)",
+    "featureTag": "24/7 Self-Service Resident Water Bill Portal",
+    "screenshot": "assets/screenshots/screenshot_05_liff_portal.png",
+    "narration_th": "ส่วนที่ห้า ระบบ ไลน์ ลิฟฟ์ สำหรับลูกบ้าน ช่วยให้ประชาชนสามารถตรวจสอบประวัติการใช้น้ำ เลขมิเตอร์ครั้งก่อนและครั้งนี้ ยอดค่าน้ำสุทธิ และสถานะการชำระเงินผ่านสมาร์ทโฟนได้ด้วยตนเองตลอดยี่สิบสี่ชั่วโมง",
+    "subtitle_th": "ฟีเจอร์ที่ 5: LINE LIFF สำหรับลูกบ้าน เช็คประวัติการใช้น้ำ ยอดค่าน้ำสุทธิ และสถานะบิลผ่านมือถือได้ตลอด 24 ชั่วโมง",
+    "highlights": [
+      {
+        "label": "LINE LIFF การ์ดตรวจสอบค่าน้ำสำหรับลูกบ้าน",
+        "x": 575,
+        "y": 160,
+        "w": 770,
+        "h": 420
+      }
+    ],
+    "duration": 20.58,
+    "startTime": 119.67,
+    "endTime": 140.25,
+    "audioPath": "assets/audio/scene_06.mp3"
+  },
+  {
+    "id": "scene_07",
+    "step": "SUMMARY & OUTRO",
+    "title": "Water Smart Bill — ยกระดับการประปาท้องถิ่นสู่ยุคดิจิทัล",
+    "featureTag": "End-to-End Municipal Water Utility Platform",
+    "screenshot": "assets/screenshots/screenshot_04_cashier_desk.png",
+    "narration_th": "ทั้งหมดนี้คือ วอเตอร์ สมาร์ท บิล ระบบที่ช่วยให้การทำงานของเจ้าหน้าที่ประปา อบต. ครบวงจร แม่นยำ โปร่งใส และตรวจสอบได้ในแพลตฟอร์มเดียว",
+    "subtitle_th": "Water Smart Bill — ครบวงจร แม่นยำ โปร่งใส และตรวจสอบได้ สำหรับองค์กรปกครองส่วนท้องถิ่นทั่วประเทศ",
+    "highlights": [
+      {
+        "label": "ครบทั้ง 5 โมดูลหลัก พร้อมใช้งานจริง 100%",
+        "x": 45,
+        "y": 85,
+        "w": 1830,
+        "h": 65
+      }
+    ],
+    "duration": 12.98,
+    "startTime": 140.25,
+    "endTime": 153.23,
+    "audioPath": "assets/audio/scene_07.mp3"
+  }
+];
+    const TOTAL_DURATION = 153.23;
+
+    function formatMMSS(sec) {
+      const s = Math.max(0, Math.floor(sec));
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      return mm + ':' + ss;
+    }
+
+    // Deterministic HyperFrames seek clock
+    window.__hf_seek = function(timeSec) {
+      const clamped = Math.max(0, Math.min(TOTAL_DURATION, Number(timeSec) || 0));
+      let activeScene = SCENES[0];
+      for (const sc of SCENES) {
+        if (clamped >= sc.startTime && clamped <= sc.endTime + 0.05) {
+          activeScene = sc;
+          break;
+        }
+      }
+
+      const localTime = Math.max(0, clamped - activeScene.startTime);
+      const localProgress = Math.min(1, localTime / Math.max(0.1, activeScene.duration));
+
+      document.getElementById('ui-step').textContent = activeScene.step;
+      document.getElementById('ui-title').textContent = activeScene.title;
+      document.getElementById('ui-tag').textContent = activeScene.featureTag;
+      document.getElementById('ui-screenshot').src = '/' + activeScene.screenshot;
+      document.getElementById('ui-subtitle').textContent = activeScene.subtitle_th;
+
+      // Subtle zoom effect during scene
+      const scale = 1.0 + (Math.sin(localProgress * Math.PI) * 0.015);
+      document.getElementById('ui-screenshot').style.transform = 'scale(' + scale.toFixed(4) + ')';
+
+      // Highlight switching (Highlight 1 in first half, Highlight 2 in second half)
+      const hlEl = document.getElementById('ui-highlight');
+      const hlLabel = document.getElementById('ui-highlight-label');
+      if (activeScene.highlights && activeScene.highlights.length > 0) {
+        const hlIndex = (activeScene.highlights.length > 1 && localProgress >= 0.5) ? 1 : 0;
+        const hl = activeScene.highlights[hlIndex];
+        hlEl.style.display = 'block';
+        hlEl.style.left = hl.x + 'px';
+        hlEl.style.top = hl.y + 'px';
+        hlEl.style.width = hl.w + 'px';
+        hlEl.style.height = hl.h + 'px';
+        hlLabel.textContent = '✨ ' + hl.label;
+      } else {
+        hlEl.style.display = 'none';
+      }
+
+      const overallPct = Math.min(100, (clamped / TOTAL_DURATION) * 100);
+      document.getElementById('ui-progress').style.width = overallPct.toFixed(2) + '%';
+      document.getElementById('ui-time').textContent = formatMMSS(clamped) + ' / ' + formatMMSS(TOTAL_DURATION);
+    };
+
+    // Check URL ?t= parameter on load for deterministic headless frame capture
+    const params = new URLSearchParams(window.location.search);
+    const initialT = parseFloat(params.get('t') || '0');
+    window.__hf_seek(initialT);
+  </script>
+</body>
+</html>

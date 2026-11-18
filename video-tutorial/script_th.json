@@ -1,0 +1,108 @@
+{
+  "title": "Water Smart Bill — คู่มือการใช้งานระบบบริหารจัดการน้ำประปาอัจฉริยะสำหรับ อบต.",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "voice": {
+    "provider": "elevenlabs",
+    "model_id": "eleven_multilingual_v2",
+    "default_voice_id": "nPczCjzI2devNBz1zQrb",
+    "settings": {
+      "stability": 0.55,
+      "similarity_boost": 0.75,
+      "style": 0.2,
+      "use_speaker_boost": true
+    }
+  },
+  "scenes": [
+    {
+      "id": "scene_01",
+      "step": "INTRO & SECURITY",
+      "title": "ระบบบริหารจัดการน้ำประปาอัจฉริยะ (Water Smart Bill)",
+      "featureTag": "Keycloak OIDC + Redis JWT Blacklist + Swagger Gate",
+      "screenshot": "assets/screenshots/screenshot_01_master_data.png",
+      "narration_th": "ยินดีต้อนรับสู่ระบบ วอเตอร์ สมาร์ท บิล แพลตฟอร์มบริหารจัดการน้ำประปาและจัดเก็บค่าน้ำอัจฉริยะสำหรับองค์กรปกครองส่วนท้องถิ่น มาพร้อมระบบความปลอดภัย เคย์โคลก โอไอดีซี และการเพิกถอนโทเคนทันทีเมื่อออกจากระบบ",
+      "subtitle_th": "ยินดีต้อนรับสู่ Water Smart Bill — แพลตฟอร์มน้ำประปาอัจฉริยะสำหรับ อบต. พร้อมระบบความปลอดภัย Keycloak OIDC และ JWT Blacklist",
+      "highlights": [
+        { "label": "SAO Platform • ต่อยอดจาก PIOS", "x": 180, "y": 38, "w": 380, "h": 54 },
+        { "label": "Swagger API & Logout (Blacklist JWT)", "x": 1390, "y": 24, "w": 490, "h": 58 }
+      ]
+    },
+    {
+      "id": "scene_02",
+      "step": "FEATURE 1 / 5",
+      "title": "1. ข้อมูล อบต. / หมู่บ้าน / เจ้าของบ้าน (Default Avatar)",
+      "featureTag": "Master Data & Automatic SVG Avatar",
+      "screenshot": "assets/screenshots/screenshot_01_master_data.png",
+      "narration_th": "ส่วนที่หนึ่ง การจัดการข้อมูลพื้นฐาน เจ้าหน้าที่สามารถตั้งค่าข้อมูล อบต. แบ่งเขตหมู่บ้านและสายจดมิเตอร์ รวมถึงลงทะเบียนเจ้าของบ้านและบ้านเลขที่ โดยหากไม่ได้อัปโหลดรูปภาพ ระบบจะสร้างรูปดีฟอลต์อวตารให้อัตโนมัติทันที",
+      "subtitle_th": "ฟีเจอร์ที่ 1: จัดการข้อมูล อบต. เขตหมู่บ้าน สายจดมิเตอร์ และทะเบียนเจ้าของบ้าน พร้อมสร้างรูป Default Avatar อัตโนมัติ",
+      "highlights": [
+        { "label": "ข้อมูล อบต. และเขตหมู่บ้าน (Zones)", "x": 55, "y": 180, "w": 710, "h": 560 },
+        { "label": "ทะเบียนเจ้าของบ้าน + Default Avatar", "x": 830, "y": 180, "w": 1035, "h": 560 }
+      ]
+    },
+    {
+      "id": "scene_03",
+      "step": "FEATURE 2 / 5",
+      "title": "2. อัตราค่าน้ำขั้นบันได & ทะเบียนมิเตอร์น้ำประปา",
+      "featureTag": "Progressive Tariff Tiers & Water Meters",
+      "screenshot": "assets/screenshots/screenshot_02_tariffs_meters.png",
+      "narration_th": "ส่วนที่สอง การกำหนดโครงสร้างอัตราค่าน้ำแบบขั้นบันได รองรับการตั้งค่ารักษามาตรวัดน้ำ ภาษีมูลค่าเพิ่ม การเปิดงวดบิลประจำเดือน และการขึ้นทะเบียนมิเตอร์น้ำเพื่อผูกกับบ้านเลขที่ของลูกบ้านแต่ละราย",
+      "subtitle_th": "ฟีเจอร์ที่ 2: กำหนดอัตราค่าน้ำแบบขั้นบันได (Tier 1–4) ค่ารักษามิเตอร์ VAT 7% เปิดงวดบิล และผูกทะเบียนมิเตอร์น้ำ",
+      "highlights": [
+        { "label": "อัตราค่าน้ำขั้นบันได Tier 1–4 & VAT 7%", "x": 55, "y": 180, "w": 860, "h": 560 },
+        { "label": "ทะเบียนมิเตอร์น้ำประปา (HSG-0001, HSG-0002)", "x": 980, "y": 180, "w": 885, "h": 560 }
+      ]
+    },
+    {
+      "id": "scene_04",
+      "step": "FEATURE 3 / 5",
+      "title": "3. จดมิเตอร์ภาคสนาม (Offline-First + AI OCR + Bluetooth)",
+      "featureTag": "Offline Sync Queue + AI OCR + ESC/POS Thermal Printer",
+      "screenshot": "assets/screenshots/screenshot_03_field_reader.png",
+      "narration_th": "ส่วนที่สาม แอปพลิเคชันจดมิเตอร์น้ำภาคสนาม ออกแบบมาให้ทำงานแบบออฟไลน์เฟิร์สในพื้นที่อับสัญญาณ มีระบบ เอไอ โอซีอาร์ ช่วยอ่านตัวเลขจากภาพถ่ายหน้าปัดมิเตอร์ คำนวณค่าน้ำทันที พร้อมสั่งพิมพ์ใบแจ้งหนี้ผ่านเครื่องพิมพ์บลูทูธพกพา และซิงค์ข้อมูลขึ้นเซิร์ฟเวอร์เมื่อมีสัญญาณอินเทอร์เน็ต",
+      "subtitle_th": "ฟีเจอร์ที่ 3: จดมิเตอร์แบบ Offline-First สแกนเลขหน้าปัดด้วย AI OCR คำนวณค่าน้ำสด และพิมพ์บิลผ่าน Bluetooth ESC/POS",
+      "highlights": [
+        { "label": "AI OCR อ่านเลขมิเตอร์ & คำนวณค่าน้ำทันที", "x": 55, "y": 180, "w": 1030, "h": 480 },
+        { "label": "คิวซิงค์ข้อมูล Offline-First (Idempotency Key)", "x": 1135, "y": 180, "w": 730, "h": 480 }
+      ]
+    },
+    {
+      "id": "scene_05",
+      "step": "FEATURE 4 / 5",
+      "title": "4. ระบบการเงินและรับชำระค่าน้ำ (Finance & Cashier Desk)",
+      "featureTag": "Cash/PromptPay Collection + Official Receipt + CSV Export",
+      "screenshot": "assets/screenshots/screenshot_04_cashier_desk.png",
+      "narration_th": "ส่วนที่สี่ ระบบการเงินและเคาน์เตอร์รับชำระค่าน้ำประจำสำนักงาน อบต. แสดงแดชบอร์ดสรุปยอดจัดเก็บแบบเรียลไทม์ ค้นหาบิลสะดวกรวดเร็ว รองรับการรับชำระทั้งเงินสดพร้อมคำนวณเงินทอน และคิวอาร์พร้อมเพย์ ออกใบเสร็จรับเงินทางการ และส่งออกรายงานซีเอสวีเพื่อสรุปบัญชีได้ทันที",
+      "subtitle_th": "ฟีเจอร์ที่ 4: เคาน์เตอร์การเงิน อบต. สรุปยอดจัดเก็บ รับชำระเงินสด/QR PromptPay ออกใบเสร็จรับเงิน และส่งออก CSV",
+      "highlights": [
+        { "label": "แดชบอร์ดสรุปยอดจัดเก็บ & ส่งออกรายงาน CSV", "x": 45, "y": 160, "w": 1830, "h": 295 },
+        { "label": "ตารางรับชำระเงิน & ออกใบเสร็จรับเงิน (RC)", "x": 45, "y": 480, "w": 1830, "h": 310 }
+      ]
+    },
+    {
+      "id": "scene_06",
+      "step": "FEATURE 5 / 5",
+      "title": "5. ระบบ LINE LIFF สำหรับลูกบ้าน (Resident Portal)",
+      "featureTag": "24/7 Self-Service Resident Water Bill Portal",
+      "screenshot": "assets/screenshots/screenshot_05_liff_portal.png",
+      "narration_th": "ส่วนที่ห้า ระบบ ไลน์ ลิฟฟ์ สำหรับลูกบ้าน ช่วยให้ประชาชนสามารถตรวจสอบประวัติการใช้น้ำ เลขมิเตอร์ครั้งก่อนและครั้งนี้ ยอดค่าน้ำสุทธิ และสถานะการชำระเงินผ่านสมาร์ทโฟนได้ด้วยตนเองตลอดยี่สิบสี่ชั่วโมง",
+      "subtitle_th": "ฟีเจอร์ที่ 5: LINE LIFF สำหรับลูกบ้าน เช็คประวัติการใช้น้ำ ยอดค่าน้ำสุทธิ และสถานะบิลผ่านมือถือได้ตลอด 24 ชั่วโมง",
+      "highlights": [
+        { "label": "LINE LIFF การ์ดตรวจสอบค่าน้ำสำหรับลูกบ้าน", "x": 575, "y": 160, "w": 770, "h": 420 }
+      ]
+    },
+    {
+      "id": "scene_07",
+      "step": "SUMMARY & OUTRO",
+      "title": "Water Smart Bill — ยกระดับการประปาท้องถิ่นสู่ยุคดิจิทัล",
+      "featureTag": "End-to-End Municipal Water Utility Platform",
+      "screenshot": "assets/screenshots/screenshot_04_cashier_desk.png",
+      "narration_th": "ทั้งหมดนี้คือ วอเตอร์ สมาร์ท บิล ระบบที่ช่วยให้การทำงานของเจ้าหน้าที่ประปา อบต. ครบวงจร แม่นยำ โปร่งใส และตรวจสอบได้ในแพลตฟอร์มเดียว",
+      "subtitle_th": "Water Smart Bill — ครบวงจร แม่นยำ โปร่งใส และตรวจสอบได้ สำหรับองค์กรปกครองส่วนท้องถิ่นทั่วประเทศ",
+      "highlights": [
+        { "label": "ครบทั้ง 5 โมดูลหลัก พร้อมใช้งานจริง 100%", "x": 45, "y": 85, "w": 1830, "h": 65 }
+      ]
+    }
+  ]
+}
