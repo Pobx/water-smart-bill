@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Operating System
+.DS_Store
+Thumbs.db
+
+# Superpowers & IDE
+.superpowers/
+.hyperframes/
+.idea/
+.vscode/
+
+# Environment & logs
+*.log
+.env
+.env.*
+!.env.example
