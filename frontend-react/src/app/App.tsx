@@ -91,6 +91,8 @@ export function App() {
     return 'master'
   })
 
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
   // Auto-switch to first permitted tab if active tab becomes forbidden on role change
   useEffect(() => {
     if (permittedMenuItems.length > 0 && !permittedMenuItems.some((m) => m.id === activeTab)) {
@@ -100,10 +102,21 @@ export function App() {
 
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900">
-      {/* Left Menu Sidebar with RBAC */}
+      {/* Mobile Drawer Backdrop */}
+      {isMobileMenuOpen && (
+        <div
+          role="presentation"
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-xs md:hidden"
+        />
+      )}
+
+      {/* Left Menu Sidebar with RBAC (Responsive Drawer on Mobile) */}
       <aside
         aria-label="Left Sidebar"
-        className="sticky top-0 flex h-screen w-72 shrink-0 flex-col justify-between border-r border-slate-200 bg-white/95 p-4 shadow-xs backdrop-blur"
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-72 shrink-0 flex-col justify-between border-r border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur transition-transform duration-200 ease-in-out md:sticky md:top-0 md:z-auto md:shadow-xs md:translate-x-0 ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
       >
         <div className="space-y-4">
           {/* Logo & App Title */}
@@ -161,7 +174,10 @@ export function App() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => {
+                    setActiveTab(item.id)
+                    setIsMobileMenuOpen(false)
+                  }}
                   className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition ${
                     isActive
                       ? 'bg-slate-900 text-white shadow-xs'
@@ -219,15 +235,25 @@ export function App() {
       {/* Main Content Area */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top Header Bar */}
-        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-6 backdrop-blur">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-semibold text-slate-700">
-              {masterData.orgInfo.org_name}
-            </span>
-            <span className="text-slate-400">•</span>
-            <span className="text-slate-500">
-              ต.{masterData.orgInfo.tambon_name} อ.{masterData.orgInfo.district_name} จ.{masterData.orgInfo.province_name}
-            </span>
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 sm:px-6 backdrop-blur">
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              aria-label="เปิดเมนูนำทาง"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-2xs hover:bg-slate-50 md:hidden"
+            >
+              <span className="text-lg">☰</span>
+            </button>
+            <div className="flex items-center gap-2 text-xs truncate">
+              <span className="font-semibold text-slate-700 truncate">
+                {masterData.orgInfo.org_name}
+              </span>
+              <span className="hidden sm:inline text-slate-400">•</span>
+              <span className="hidden sm:inline text-slate-500">
+                ต.{masterData.orgInfo.tambon_name} อ.{masterData.orgInfo.district_name} จ.{masterData.orgInfo.province_name}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

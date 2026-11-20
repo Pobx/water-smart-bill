@@ -198,9 +198,10 @@ export function FinanceCashierScreen({ token, invoices, onInvoicePaid }: Finance
         </div>
       </div>
 
-      {/* Invoices Table */}
+      {/* Invoices List Container */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Desktop Table View (md ขึ้นไป) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-600">
             <thead className="bg-slate-50 text-slate-700 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
               <tr>
@@ -276,6 +277,76 @@ export function FinanceCashierScreen({ token, invoices, onInvoicePaid }: Finance
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile Card View (เล็กกว่า md) */}
+        <div className="block md:hidden divide-y divide-slate-100">
+          {filteredInvoices.length === 0 ? (
+            <div className="px-4 py-8 text-center text-xs text-slate-400">
+              ไม่พบรายการใบแจ้งหนี้ตามเงื่อนไขที่เลือก
+            </div>
+          ) : (
+            filteredInvoices.map((inv) => (
+              <div key={inv.id} className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-mono text-xs font-bold text-slate-900">{inv.inv_no}</span>
+                    <span className="block text-[11px] text-slate-400">ประจำงวด {inv.period_name}</span>
+                  </div>
+                  {inv.status === 'paid' ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 shrink-0">
+                      ✓ ชำระแล้ว
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 shrink-0">
+                      ⏳ รอชำระ
+                    </span>
+                  )}
+                </div>
+
+                <div className="rounded-lg bg-slate-50 p-2.5 text-xs space-y-1">
+                  <div className="font-semibold text-slate-900">{inv.homeowner_name}</div>
+                  <div className="text-slate-500 text-[11px]">
+                    บ้านเลขที่ {inv.house_no} • {inv.zone_name}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-slate-200/60">
+                    <span className="font-mono text-sky-700 font-medium">มิเตอร์ {inv.meternumber}</span>
+                    <span className="font-mono text-blue-600 font-medium">
+                      {inv.lastmeter} ➔ {inv.currentmeter} ({inv.water_used} m³)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div>
+                    <span className="text-[11px] text-slate-400 block">ยอดชำระสุทธิ</span>
+                    <span className="text-base font-bold text-slate-900 font-mono">
+                      ฿{inv.totalpaid.toFixed(2)}
+                    </span>
+                  </div>
+                  <div>
+                    {inv.status === 'paid' ? (
+                      <button
+                        type="button"
+                        onClick={() => handlePrintReceipt(inv)}
+                        className="px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                      >
+                        🧾 ใบเสร็จ ({inv.receipt_no || 'RC'})
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPayment(inv)}
+                        className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors"
+                      >
+                        💵 รับชำระเงิน
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

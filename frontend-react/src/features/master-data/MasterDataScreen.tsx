@@ -241,8 +241,8 @@ export function MasterDataScreen({
             </div>
           </form>
 
-          {/* ตารางรายชื่อเจ้าของบ้านพร้อมรูป Avatar */}
-          <div className="mt-6 overflow-x-auto">
+          {/* ตารางรายชื่อเจ้าของบ้าน (แสดงเฉพาะ Desktop: md ขึ้นไป) */}
+          <div className="mt-6 hidden md:block overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
                 <tr>
@@ -280,6 +280,43 @@ export function MasterDataScreen({
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* รายการเจ้าของบ้านแบบการ์ด (แสดงเฉพาะ Mobile: เล็กกว่า md) */}
+          <div className="mt-4 block md:hidden space-y-3">
+            {homeowners.map((h) => (
+              <div
+                key={h.id}
+                className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2.5"
+              >
+                <div className="flex items-center gap-3">
+                  <img
+                    src={h.avatar_url || resolveAvatarUrl(h.image, h.firstname, h.lastname)}
+                    alt={`Avatar ${h.firstname} ${h.lastname}`}
+                    className="h-11 w-11 shrink-0 rounded-full border border-slate-200 object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <h4 className="font-semibold text-slate-900 truncate text-sm">
+                        {h.prefix}{h.firstname} {h.lastname}
+                      </h4>
+                      <span className="shrink-0 rounded-md bg-sky-50 px-2 py-0.5 font-mono text-xs font-bold text-sky-700 border border-sky-100">
+                        {h.house_no}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 truncate">
+                      {h.zone_name} • ต.{h.tambon_name}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-[11px]">
+                  <span className="text-slate-400">สถานะรูปภาพ</span>
+                  <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                    {h.image ? 'Uploaded Photo' : 'Default Avatar'}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

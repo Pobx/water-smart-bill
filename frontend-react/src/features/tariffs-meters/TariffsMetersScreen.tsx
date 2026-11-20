@@ -59,38 +59,73 @@ export function TariffsMetersScreen({
           </div>
         </div>
 
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
-            <tr>
-              <th className="px-3 py-2">ขั้นที่</th>
-              <th className="px-3 py-2">ช่วงหน่วยน้ำ (m³)</th>
-              <th className="px-3 py-2">ราคา/หน่วย (บาท)</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {tiers.map((t, idx) => (
-              <tr key={t.tier_order}>
-                <td className="px-3 py-2 font-mono font-bold">Tier #{t.tier_order}</td>
-                <td className="px-3 py-2 text-slate-700">
-                  {t.min_units} - {t.max_units ?? 'ขึ้นไป'} หน่วย
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    className="w-24 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
-                    value={t.rate_per_unit}
-                    onChange={(e) => {
-                      const updated = [...tiers]
-                      updated[idx] = { ...t, rate_per_unit: Number(e.target.value) || 0 }
-                      setTiers(updated)
-                    }}
-                  />{' '}
-                  ฿
-                </td>
+        {/* ตารางอัตราค่าน้ำ (Desktop: md ขึ้นไป) */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
+              <tr>
+                <th className="px-3 py-2">ขั้นที่</th>
+                <th className="px-3 py-2">ช่วงหน่วยน้ำ (m³)</th>
+                <th className="px-3 py-2">ราคา/หน่วย (บาท)</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {tiers.map((t, idx) => (
+                <tr key={t.tier_order}>
+                  <td className="px-3 py-2 font-mono font-bold">Tier #{t.tier_order}</td>
+                  <td className="px-3 py-2 text-slate-700">
+                    {t.min_units} - {t.max_units ?? 'ขึ้นไป'} หน่วย
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="number"
+                      className="w-24 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
+                      value={t.rate_per_unit}
+                      onChange={(e) => {
+                        const updated = [...tiers]
+                        updated[idx] = { ...t, rate_per_unit: Number(e.target.value) || 0 }
+                        setTiers(updated)
+                      }}
+                    />{' '}
+                    ฿
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* รายการอัตราค่าน้ำแบบการ์ด (Mobile: เล็กกว่า md) */}
+        <div className="block md:hidden space-y-2.5">
+          {tiers.map((t, idx) => (
+            <div
+              key={t.tier_order}
+              className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 flex items-center justify-between gap-3"
+            >
+              <div>
+                <span className="font-mono text-xs font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
+                  Tier #{t.tier_order}
+                </span>
+                <p className="text-xs text-slate-600 mt-1">
+                  {t.min_units} - {t.max_units ?? 'ขึ้นไป'} หน่วย
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <input
+                  type="number"
+                  className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 font-mono text-sm text-right font-bold text-sky-700 shadow-2xs"
+                  value={t.rate_per_unit}
+                  onChange={(e) => {
+                    const updated = [...tiers]
+                    updated[idx] = { ...t, rate_per_unit: Number(e.target.value) || 0 }
+                    setTiers(updated)
+                  }}
+                />
+                <span className="text-xs font-medium text-slate-500">฿/หน่วย</span>
+              </div>
+            </div>
+          ))}
+        </div>
 
         {/* เปิดรอบบิล */}
         <div className="mt-5 border-t border-slate-100 pt-4">
@@ -161,7 +196,8 @@ export function TariffsMetersScreen({
           </div>
         </form>
 
-        <div className="mt-5 overflow-x-auto">
+        {/* ตารางทะเบียนมิเตอร์ (Desktop: md ขึ้นไป) */}
+        <div className="mt-5 hidden md:block overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
               <tr>
@@ -184,6 +220,31 @@ export function TariffsMetersScreen({
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* รายการทะเบียนมิเตอร์แบบการ์ด (Mobile: เล็กกว่า md) */}
+        <div className="mt-4 block md:hidden space-y-2.5">
+          {meters.map((m) => (
+            <div
+              key={m.meter_id}
+              className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-100">
+                  {m.meternumber}
+                </span>
+                <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
+                  {m.last_meter_recording} m³
+                </span>
+              </div>
+              <div className="text-xs">
+                <div className="font-semibold text-slate-900">{m.homeowner_name}</div>
+                <div className="text-slate-500 text-[11px] mt-0.5">
+                  บ้านเลขที่ {m.house_no} • {m.zone_name}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
