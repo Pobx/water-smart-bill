@@ -48,7 +48,7 @@ export const MENU_ITEMS: MenuItem[] = [
     shortLabel: 'การเงิน & รับชำระ',
     icon: '💰',
     allowedRoles: ['admin', 'finance_staff'],
-    description: 'เคาน์เตอร์รับชำระเงินสด/QR, ออกใบเสร็จรับเงิน, รายงานยอดจัดเก็บ',
+    description: 'เคาน์เตอร์รับชำระเงินสด, ออกใบเสร็จรับเงิน, รายงานยอดจัดเก็บ',
   },
   {
     id: 'liff',

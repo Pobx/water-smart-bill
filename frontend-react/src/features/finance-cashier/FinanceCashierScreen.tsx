@@ -95,7 +95,7 @@ export function FinanceCashierScreen({ token, invoices, onInvoicePaid }: Finance
             ฿{report?.total_collected.toLocaleString('th-TH', { minimumFractionDigits: 2 }) ?? '0.00'}
           </div>
           <div className="text-xs text-slate-500 mt-1">
-            เงินสด: ฿{(report?.total_cash ?? 0).toFixed(2)} | QR: ฿{(report?.total_promptpay ?? 0).toFixed(2)}
+            เงินสด: ฿{(report?.total_cash ?? 0).toFixed(2)}
           </div>
         </div>
 
@@ -331,25 +331,21 @@ export function FinanceCashierScreen({ token, invoices, onInvoicePaid }: Finance
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('cash')}
-                  className={`p-3 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
-                    paymentMethod === 'cash'
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20'
-                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                  }`}
+                  className="p-3 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 transition-all border-emerald-600 bg-emerald-50 text-emerald-800 ring-2 ring-emerald-500/20"
                 >
                   <span>💵</span> เงินสด (Cash)
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('promptpay')}
-                  className={`p-3 rounded-xl border text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
-                    paymentMethod === 'promptpay'
-                      ? 'border-blue-600 bg-blue-50 text-blue-800 ring-2 ring-blue-500/20'
-                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                  }`}
+                <div
+                  className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 text-xs font-medium flex flex-col items-center justify-center gap-0.5 cursor-not-allowed select-none opacity-60"
+                  title="ระบบ QR Code ปิดใช้งานชั่วคราว อยู่ระหว่างศึกษาเตรียมการ"
                 >
-                  <span>📱</span> โอน QR PromptPay
-                </button>
+                  <span className="flex items-center gap-1 font-semibold text-slate-500">
+                    <span>📱</span> โอน QR Code
+                  </span>
+                  <span className="text-[10px] text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                    ปิดเตรียมการชั่วคราว
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -477,7 +473,7 @@ export function FinanceCashierScreen({ token, invoices, onInvoicePaid }: Finance
               </div>
 
               <div className="border-t border-dashed pt-2 text-center text-slate-500">
-                <div>วิธีชำระ: {receiptModalInvoice.payment_method === 'cash' ? 'เงินสด' : 'โอน QR PromptPay'}</div>
+                <div>วิธีชำระ: เงินสด</div>
                 <div className="text-emerald-700 font-bold mt-1">✓ ชำระเงินเรียบร้อยแล้ว</div>
               </div>
             </div>
