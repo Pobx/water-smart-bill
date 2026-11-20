@@ -1,10 +1,10 @@
-# ADR 0002: สถาปัตยกรรมระบบบริหารจัดการน้ำประปา อบต. (Water Smart Bill Architecture & PIOS Evolution)
+# ADR 0002: สถาปัตยกรรมระบบบริหารจัดการน้ำประปา อบต. (Water Smart Bill System Architecture)
 
 ## Status
 Accepted (วันที่ 2026-11-18)
 
 ## Context
-องค์การบริหารส่วนตำบล (อบต.) ต้องการระบบบริหารจัดการน้ำประปา (`water-smart-bill`) ที่ต่อยอดจากโมดูล `tabwater` ของระบบ `pios` โดยต้องรองรับ:
+องค์การบริหารส่วนตำบล (อบต.) ต้องการระบบบริหารจัดการน้ำประปา (`water-smart-bill`) เพื่อยกระดับการให้บริการสาธารณะ โดยต้องรองรับ:
 1. การบันทึกข้อมูล อบต. (`organizations`), ตำบล (`provinces`, `districts`, `tambons`), หมู่บ้าน (`zones`), คุ้ม/สายจดมิเตอร์ (`subzones`), บ้านเลขที่และเจ้าของบ้าน (`users`) พร้อมรูป Avatar (หากไม่อัปโหลดต้องมี Default Avatar อัตโนมัติ)
 2. การกำหนดอัตราค่าน้ำแบบขั้นบันได (`tw_meter_types`, `tw_meter_type_rate_configs`, `tw_meter_type_rate_tiers`) และการเปิดรอบบิล (`invoice_period`)
 3. การขึ้นทะเบียนมิเตอร์น้ำ (`tw_meter_infos`), การจดเลขมิเตอร์และคำนวณค่าน้ำอัตโนมัติ (`tw_invoice`)

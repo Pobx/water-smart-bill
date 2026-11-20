@@ -1,17 +1,17 @@
 # Software Requirements Specification (SRS) — Water Smart Bill
 
 ## 1. บทนำ (Introduction)
-เอกสาร SRS ฉบับนี้ระบุข้อกำหนดทางเทคนิค ฟังก์ชันการทำงาน (Functional Requirements) และข้อกำหนดด้านคุณภาพระบบ (Non-Functional Requirements) ของระบบ **Water Smart Bill** สำหรับองค์การบริหารส่วนตำบล (อบต.) โดยอ้างอิงโครงสร้างฐานข้อมูลและโดเมนจากระบบ `pios`
+เอกสาร SRS ฉบับนี้ระบุข้อกำหนดทางเทคนิค ฟังก์ชันการทำงาน (Functional Requirements) และข้อกำหนดด้านคุณภาพระบบ (Non-Functional Requirements) ของระบบ **Water Smart Bill** สำหรับองค์การบริหารส่วนตำบล (อบต.) เพื่อบริหารจัดการค่าน้ำประปาครบวงจร
 
 ---
 
 ## 2. สถาปัตยกรรมและเทคโนโลยี (Technology Stack & Codebase Architecture)
-- **Frontend:** React 18 (TypeScript) + Vite + Tailwind CSS + `shadcn/ui` & `v0.app` Design System + IndexedDB Offline Queue + Web Bluetooth API (ESC/POS) + LINE LIFF View
+- **Frontend:** React 18 (TypeScript) + Vite + Tailwind CSS + `shadcn/ui` & `v0.app` Design System + Left Menu Navigation + IndexedDB Offline Queue + Web Bluetooth API (ESC/POS) + LINE LIFF View
   - **Frontend Architecture Standard:** **Vertical Slice Architecture** อ้างอิงตาม [Martin Piliar — Vertical Slice Architecture Guide](https://www.piliar.me/blog/vertical-slice-architecture-react-native/) โดยจัดกลุ่มโค้ดตาม Feature Slice ภายใต้ `frontend-react/src/features/<slice>/` แต่ละ Slice ประกอบด้วย `<Feature>Screen.tsx` (View), `use<Feature>.ts` (State & Logic Hook), `<feature>Api.ts` (API Client), และ `index.ts` (Public Barrel Export) แยกจาก `src/shared/` อย่างชัดเจน
 - **Backend:** Golang 1.23 + Echo v4 Framework
   - **Backend Architecture Standard:** **Hexagonal Architecture (Ports & Adapters)** อ้างอิงตาม [Vinícius A dos Santos — Hexagonal Architecture with Golang](https://vinisantos.dev/posts/hexagonal-architecture-with-golang) โดยแยกชั้น `application/` (Domain Entities + `IsValid()`, `application/ports/` สำหรับ Inbound Service Port & Outbound Persistence/Auth/Blacklist Port, และ `application/services/` สำหรับ Service Implementation) ออกจากชั้น `adapters/` (`adapters/dto/` พร้อม `Bind()` & `ConvertToEntity()`, `adapters/web/rest/handler/`, `adapters/web/rest/server.go`, `adapters/sqldb/`, `adapters/memory/`, `adapters/keycloak/`, `adapters/blacklist/`)
 - **Database:** PostgreSQL 16 (พร้อม Row-Level Security แยกตาม `org_id`)
-- **Authentication & Security:** Keycloak 26 OIDC + Redis 7 JWT Blacklist (เมื่อ Logout) + Custom Keycloak Login Theme ด้วย Tailwind CSS
+- **Authentication & Security:** Keycloak 26 OIDC + Redis Session Revocation (เมื่อ Logout) + Role-Based Access Control (RBAC) + Custom Keycloak Login Theme ด้วย Tailwind CSS
 - **API Documentation:** OpenAPI 3.0 / Swagger UI เปิดใช้งานเฉพาะ Non-Production (`APP_ENV != "production"`)
 - **Deployment:** Container-First & Docker Compose (`deploy/docker-compose.yml`)
 
@@ -52,9 +52,10 @@
 - **FR-06.1:** เจ้าของบ้านต้องสามารถเข้าดูข้อมูลการใช้น้ำและประวัติการชำระค่าน้ำของบ้านตนเองผ่านหน้า LINE LIFF (`/liff`) โดยอ้างอิง `line_user_id` หรือค้นหาด้วยเลขมิเตอร์/บ้านเลขที่
 - **FR-06.2:** เจ้าของบ้านสามารถผูกบัญชี LINE (`line_user_id`) เข้ากับทะเบียนผู้ใช้น้ำของตนเอง และดูใบแจ้งหนี้ รูปถ่ายมิเตอร์ รวมถึงใบเสร็จรับเงินได้
 
-### FR-07: ระบบยืนยันตัวตน Keycloak, JWT Blacklist และ Custom Login Page
+### FR-07: ระบบยืนยันตัวตน Keycloak, การเพิกถอนเซสชัน (Session Revocation) และการควบคุมสิทธิ์ RBAC
 - **FR-07.1:** ระบบต้องใช้ Keycloak OIDC ในการยืนยันตัวตน พร้อมปรับแต่งหน้า Login ด้วย Tailwind CSS (`deploy/keycloak/themes/water-smart-bill/login/`)
-- **FR-07.2:** เมื่อผู้ใช้งานกด Logout (`POST /api/v1/auth/logout`) ระบบต้องนำ `jti` (หรือ Token Digest) ของ JWT ไปบันทึกใน Redis Blacklist จนกว่า Token จะหมดอายุ และปฏิเสธทุกคำขอที่ใช้ Token ดังกล่าวด้วยสถานะ `401 Unauthorized`
+- **FR-07.2:** เมื่อผู้ใช้งานกด Logout (`POST /api/v1/auth/logout`) ระบบต้องนำ `jti` (หรือ Token Digest) ของ JWT ไปเพิกถอนใน Redis จนกว่า Token จะหมดอายุ และปฏิเสธทุกคำขอที่ใช้ Token ดังกล่าวด้วยสถานะ `401 Unauthorized`
+- **FR-07.3:** ระบบต้องมี Middleware ควบคุมสิทธิ์แบบ Role-Based Access Control (RBAC) ทั้งใน Backend API และเมนูด้านซ้าย (Left Menu) ของ Frontend
 
 ---
 
@@ -64,7 +65,7 @@
 | :--- | :--- | :--- | :--- |
 | `GET` | `/healthz`, `/readyz` | ตรวจสอบสถานะความพร้อมของระบบ | Public |
 | `GET` | `/swagger/*`, `/api/v1/openapi.yaml` | เอกสาร Swagger UI (เปิดเฉพาะ `APP_ENV != production`) | Non-Prod Only |
-| `POST` | `/api/v1/auth/logout` | เพิกถอน JWT เข้าสู่ Redis Blacklist เมื่อ Logout | Authenticated |
+| `POST` | `/api/v1/auth/logout` | เพิกถอนเซสชัน Token ทันทีเมื่อ Logout | Authenticated |
 | `GET` | `/api/v1/me` | ดึงข้อมูลผู้ใช้งานปัจจุบันจาก JWT | Authenticated |
 | `GET/POST` | `/api/v1/organizations` | ดูและบันทึกข้อมูล อบต. | Admin / Staff |
 | `GET` | `/api/v1/locations/tambons` | ดูข้อมูลจังหวัด อำเภอ ตำบล | Authenticated |

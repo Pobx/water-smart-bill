@@ -1,6 +1,6 @@
 # Water Smart Bill — ระบบบริหารจัดการค่าน้ำประปาสำหรับ อบต.
 
-ระบบบริหารจัดการน้ำประปาอัจฉริยะสำหรับองค์การบริหารส่วนตำบล (อบต.) ที่ถอดบทเรียนและต่อยอดจากโมดูล `tabwater` ของระบบ `pios`
+ระบบบริหารจัดการน้ำประปาอัจฉริยะสำหรับองค์การบริหารส่วนตำบล (อบต.) พร้อมระบบจดมิเตอร์ออฟไลน์ (Offline-First), ตัวช่วยอ่านเลขมิเตอร์ AI OCR, เครื่องพิมพ์บิล Bluetooth และพอร์ทัลลูกบ้าน LINE LIFF
 
 ---
 
@@ -18,8 +18,9 @@
    - ออกบิลค่าน้ำทันทีหลังบันทึกมิเตอร์ผ่าน **เครื่องพิมพ์ Bluetooth พกพา (Web Bluetooth ESC/POS 58mm/80mm)**
 4. **พอร์ทัลตรวจสอบค่าน้ำสำหรับเจ้าของบ้านผ่าน LINE LIFF (`Resident Portal`)**:
    - เจ้าของบ้านตรวจสอบยอดค้างชำระ ประวัติการใช้น้ำ และใบเสร็จผ่าน LINE LIFF (`/liff`)
-5. **ความปลอดภัย Keycloak OIDC + Redis JWT Blacklist + Custom Tailwind Login**:
-   - เมื่อกด Logout (`POST /api/v1/auth/logout`) ระบบบันทึก `jti` ลง Redis Blacklist ทันที
+5. **ความปลอดภัย Keycloak OIDC + Session Revocation + Dynamic RBAC**:
+   - ควบคุมสิทธิ์การเข้าถึงด้วย **Role-Based Access Control (RBAC)** ทั้งในระดับ API Endpoints และเมนูด้านซ้าย (Left Menu) ของหน้าเว็บ
+   - เมื่อกด Logout (`POST /api/v1/auth/logout`) ระบบเพิกถอนเซสชัน Token ทันที
    - ปรับแต่งหน้า Login ของ Keycloak ด้วย Tailwind CSS (`deploy/keycloak/themes/water-smart-bill/login/`)
    - เปิดใช้งาน Swagger UI (`/swagger/index.html`) เฉพาะ Non-Production (`APP_ENV != production`)
 

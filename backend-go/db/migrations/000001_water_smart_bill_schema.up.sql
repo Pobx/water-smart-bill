@@ -1,5 +1,5 @@
 -- 000001_water_smart_bill_schema.up.sql
--- Water Smart Bill Schema (Evolved from PIOS Tabwater Module)
+-- Water Smart Bill Primary Database Schema
 
 CREATE TABLE IF NOT EXISTS provinces (
     id BIGINT PRIMARY KEY,
