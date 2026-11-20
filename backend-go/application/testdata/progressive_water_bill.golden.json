@@ -1,0 +1,37 @@
+[
+  {
+    "units_used": 0,
+    "water_charge": 0,
+    "reserve_fee": 10,
+    "vat_amount": 0.7,
+    "total_payable": 10.7
+  },
+  {
+    "units_used": 5,
+    "water_charge": 25,
+    "reserve_fee": 10,
+    "vat_amount": 2.45,
+    "total_payable": 37.45
+  },
+  {
+    "units_used": 15,
+    "water_charge": 85,
+    "reserve_fee": 10,
+    "vat_amount": 6.65,
+    "total_payable": 101.65
+  },
+  {
+    "units_used": 35,
+    "water_charge": 270,
+    "reserve_fee": 10,
+    "vat_amount": 19.6,
+    "total_payable": 299.6
+  },
+  {
+    "units_used": 75,
+    "water_charge": 720,
+    "reserve_fee": 10,
+    "vat_amount": 51.1,
+    "total_payable": 781.1
+  }
+]

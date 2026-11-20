@@ -1,0 +1,580 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Golden Snapshot Tests (Visual & Structural Characterization) > matches golden snapshot for MasterDataScreen (verifying Desktop Table + Mobile Cards integrity) 1`] = `
+<div>
+  <div
+    class="space-y-6"
+  >
+    <div
+      class="grid gap-6 lg:grid-cols-12"
+    >
+      <div
+        class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs lg:col-span-5"
+      >
+        <div
+          class="mb-4 flex items-center justify-between"
+        >
+          <div>
+            <h2
+              class="text-base font-bold text-slate-900"
+            >
+              ข้อมูล อบต. และพื้นที่ตำบล
+            </h2>
+            <p
+              class="text-xs text-slate-500"
+            >
+              ตาราง organizations, provinces, districts, tambons
+            </p>
+          </div>
+          <span
+            class="rounded-md bg-slate-100 px-2.5 py-1 font-mono text-xs font-semibold text-slate-700"
+          >
+            HSG1
+          </span>
+        </div>
+        <div
+          class="space-y-3 text-sm"
+        >
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-slate-500"
+            >
+              ชื่อองค์การบริหารส่วนตำบล (อบต.)
+            </label>
+            <input
+              aria-label="ชื่อ อบต."
+              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value="องค์การบริหารส่วนตำบลห้องแซง"
+            />
+          </div>
+          <div
+            class="grid grid-cols-3 gap-2"
+          >
+            <div>
+              <label
+                class="mb-1 block text-xs font-medium text-slate-500"
+              >
+                ตำบล
+              </label>
+              <input
+                aria-label="ตำบล"
+                class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                value="ห้องแซง"
+              />
+            </div>
+            <div>
+              <label
+                class="mb-1 block text-xs font-medium text-slate-500"
+              >
+                อำเภอ
+              </label>
+              <input
+                class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                readonly=""
+                value="เลิงนกทา"
+              />
+            </div>
+            <div>
+              <label
+                class="mb-1 block text-xs font-medium text-slate-500"
+              >
+                จังหวัด
+              </label>
+              <input
+                class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                readonly=""
+                value="ยโสธร"
+              />
+            </div>
+          </div>
+        </div>
+        <form
+          class="mt-5 border-t border-slate-100 pt-4"
+        >
+          <h3
+            class="mb-2 text-sm font-bold text-slate-900"
+          >
+            จัดการหมู่บ้าน (Zones) & สายจดมิเตอร์
+          </h3>
+          <div
+            class="grid grid-cols-3 gap-2"
+          >
+            <input
+              class="rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+              placeholder="หมู่ที่"
+              value="3"
+            />
+            <input
+              class="col-span-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+              placeholder="ชื่อหมู่บ้าน (เช่น บ้านดอน)"
+              value=""
+            />
+          </div>
+          <div
+            class="mt-2 flex gap-2"
+          >
+            <input
+              class="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
+              placeholder="สายจดมิเตอร์ / คุ้ม"
+              value=""
+            />
+            <button
+              class="rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+              type="submit"
+            >
+              + เพิ่มหมู่บ้าน
+            </button>
+          </div>
+          <ul
+            class="mt-3 space-y-1.5 text-xs text-slate-600"
+          >
+            <li
+              class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5"
+            >
+              <span
+                class="font-medium text-slate-800"
+              >
+                หมู่ที่ 1 บ้านห้องแซงเหนือ
+              </span>
+              <span
+                class="text-slate-500"
+              >
+                สายจดที่ 1 (คุ้มวัดเหนือ)
+              </span>
+            </li>
+            <li
+              class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5"
+            >
+              <span
+                class="font-medium text-slate-800"
+              >
+                หมู่ที่ 2 บ้านห้องแซงใต้
+              </span>
+              <span
+                class="text-slate-500"
+              >
+                สายจดที่ 2 (คุ้มตลาดใต้)
+              </span>
+            </li>
+          </ul>
+        </form>
+      </div>
+      <div
+        class="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs lg:col-span-7"
+      >
+        <div
+          class="mb-4 flex items-center justify-between"
+        >
+          <div>
+            <h2
+              class="text-base font-bold text-slate-900"
+            >
+              บันทึกบ้านเลขที่และเจ้าของบ้าน (พร้อมรูป Avatar)
+            </h2>
+            <p
+              class="text-xs text-slate-500"
+            >
+              หากไม่อัปโหลดรูป ระบบจะสร้างรูป Default Avatar อัตโนมัติ (\`resolveAvatarUrl\`)
+            </p>
+          </div>
+        </div>
+        <form
+          class="grid gap-3 sm:grid-cols-3"
+        >
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-slate-600"
+            >
+              คำนำหน้า
+            </label>
+            <select
+              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option
+                value="นาย"
+              >
+                นาย
+              </option>
+              <option
+                value="นาง"
+              >
+                นาง
+              </option>
+              <option
+                value="นางสาว"
+              >
+                นางสาว
+              </option>
+            </select>
+          </div>
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-slate-600"
+              for="owner-firstname"
+            >
+              ชื่อเจ้าของบ้าน
+            </label>
+            <input
+              aria-label="ชื่อเจ้าของบ้าน"
+              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              id="owner-firstname"
+              placeholder="เช่น วิภา"
+              value=""
+            />
+          </div>
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-slate-600"
+              for="owner-lastname"
+            >
+              นามสกุลเจ้าของบ้าน
+            </label>
+            <input
+              aria-label="นามสกุลเจ้าของบ้าน"
+              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              id="owner-lastname"
+              placeholder="เช่น สุขใจ"
+              value=""
+            />
+          </div>
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-slate-600"
+              for="owner-houseno"
+            >
+              บ้านเลขที่
+            </label>
+            <input
+              aria-label="บ้านเลขที่"
+              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              id="owner-houseno"
+              placeholder="เช่น 309/2"
+              value=""
+            />
+          </div>
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-slate-600"
+            >
+              หมู่บ้าน
+            </label>
+            <select
+              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option
+                value="1"
+              >
+                หมู่ที่ 1 บ้านห้องแซงเหนือ
+              </option>
+              <option
+                value="2"
+              >
+                หมู่ที่ 2 บ้านห้องแซงใต้
+              </option>
+            </select>
+          </div>
+          <div>
+            <label
+              class="mb-1 block text-xs font-medium text-slate-600"
+            >
+              เบอร์โทรศัพท์
+            </label>
+            <input
+              class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              placeholder="08x-xxx-xxxx"
+              value=""
+            />
+          </div>
+          <div
+            class="sm:col-span-2"
+          >
+            <label
+              class="mb-1 block text-xs font-medium text-slate-600"
+            >
+              อัปโหลดรูป Avatar (ตัวเลือก — ถ้าเว้นว่างจะใช้ Default Avatar)
+            </label>
+            <input
+              accept="image/*"
+              class="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-600"
+              type="file"
+            />
+          </div>
+          <div
+            class="flex items-end"
+          >
+            <button
+              class="w-full rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-sky-700"
+              type="submit"
+            >
+              บันทึกเจ้าของบ้าน
+            </button>
+          </div>
+        </form>
+        <div
+          class="mt-6 hidden md:block overflow-x-auto"
+        >
+          <table
+            class="w-full text-left text-sm"
+          >
+            <thead
+              class="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500"
+            >
+              <tr>
+                <th
+                  class="px-3 py-2.5"
+                >
+                  Avatar
+                </th>
+                <th
+                  class="px-3 py-2.5"
+                >
+                  ชื่อ-นามสกุลเจ้าของบ้าน
+                </th>
+                <th
+                  class="px-3 py-2.5"
+                >
+                  บ้านเลขที่
+                </th>
+                <th
+                  class="px-3 py-2.5"
+                >
+                  หมู่บ้าน / ตำบล
+                </th>
+                <th
+                  class="px-3 py-2.5"
+                >
+                  สถานะรูป
+                </th>
+              </tr>
+            </thead>
+            <tbody
+              class="divide-y divide-slate-100"
+            >
+              <tr>
+                <td
+                  class="px-3 py-2.5"
+                >
+                  <img
+                    alt="Avatar สมหมาย ใจดี"
+                    class="h-9 w-9 rounded-full border border-slate-200 object-cover"
+                    src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%20120%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20rx%3D%2260%22%20fill%3D%22%230284c7%22%2F%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2246%22%20r%3D%2220%22%20fill%3D%22%23ffffff%22%20opacity%3D%220.95%22%2F%3E%3Cpath%20d%3D%22M26%2C104%20C26%2C82%2040%2C74%2060%2C74%20C80%2C74%2094%2C82%2094%2C104%20Z%22%20fill%3D%22%23ffffff%22%20opacity%3D%220.95%22%2F%3E%3C%2Fsvg%3E"
+                  />
+                </td>
+                <td
+                  class="px-3 py-2.5 font-semibold text-slate-900"
+                >
+                  นาย
+                  สมหมาย
+                   
+                  ใจดี
+                </td>
+                <td
+                  class="px-3 py-2.5 font-mono font-semibold text-sky-700"
+                >
+                  101/1
+                </td>
+                <td
+                  class="px-3 py-2.5 text-xs text-slate-600"
+                >
+                  หมู่ที่ 1 บ้านห้องแซงเหนือ
+                   • ต.
+                  ห้องแซง
+                </td>
+                <td
+                  class="px-3 py-2.5"
+                >
+                  <span
+                    class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                  >
+                    Default Avatar
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td
+                  class="px-3 py-2.5"
+                >
+                  <img
+                    alt="Avatar มาลี ศรีสุข"
+                    class="h-9 w-9 rounded-full border border-slate-200 object-cover"
+                    src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%20120%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20rx%3D%2260%22%20fill%3D%22%230284c7%22%2F%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2246%22%20r%3D%2220%22%20fill%3D%22%23ffffff%22%20opacity%3D%220.95%22%2F%3E%3Cpath%20d%3D%22M26%2C104%20C26%2C82%2040%2C74%2060%2C74%20C80%2C74%2094%2C82%2094%2C104%20Z%22%20fill%3D%22%23ffffff%22%20opacity%3D%220.95%22%2F%3E%3C%2Fsvg%3E"
+                  />
+                </td>
+                <td
+                  class="px-3 py-2.5 font-semibold text-slate-900"
+                >
+                  นาง
+                  มาลี
+                   
+                  ศรีสุข
+                </td>
+                <td
+                  class="px-3 py-2.5 font-mono font-semibold text-sky-700"
+                >
+                  205/4
+                </td>
+                <td
+                  class="px-3 py-2.5 text-xs text-slate-600"
+                >
+                  หมู่ที่ 2 บ้านห้องแซงใต้
+                   • ต.
+                  ห้องแซง
+                </td>
+                <td
+                  class="px-3 py-2.5"
+                >
+                  <span
+                    class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700"
+                  >
+                    Default Avatar
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div
+          class="mt-4 block md:hidden space-y-3"
+        >
+          <div
+            class="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2.5"
+          >
+            <div
+              class="flex items-center gap-3"
+            >
+              <img
+                alt="Avatar สมหมาย ใจดี"
+                class="h-11 w-11 shrink-0 rounded-full border border-slate-200 object-cover"
+                src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%20120%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20rx%3D%2260%22%20fill%3D%22%230284c7%22%2F%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2246%22%20r%3D%2220%22%20fill%3D%22%23ffffff%22%20opacity%3D%220.95%22%2F%3E%3Cpath%20d%3D%22M26%2C104%20C26%2C82%2040%2C74%2060%2C74%20C80%2C74%2094%2C82%2094%2C104%20Z%22%20fill%3D%22%23ffffff%22%20opacity%3D%220.95%22%2F%3E%3C%2Fsvg%3E"
+              />
+              <div
+                class="min-w-0 flex-1"
+              >
+                <div
+                  class="flex items-center justify-between gap-1"
+                >
+                  <h4
+                    class="font-semibold text-slate-900 truncate text-sm"
+                  >
+                    นาย
+                    สมหมาย
+                     
+                    ใจดี
+                  </h4>
+                  <span
+                    class="shrink-0 rounded-md bg-sky-50 px-2 py-0.5 font-mono text-xs font-bold text-sky-700 border border-sky-100"
+                  >
+                    101/1
+                  </span>
+                </div>
+                <p
+                  class="text-xs text-slate-500 mt-0.5 truncate"
+                >
+                  หมู่ที่ 1 บ้านห้องแซงเหนือ
+                   • ต.
+                  ห้องแซง
+                </p>
+              </div>
+            </div>
+            <div
+              class="flex items-center justify-between border-t border-slate-100 pt-2 text-[11px]"
+            >
+              <span
+                class="text-slate-400"
+              >
+                สถานะรูปภาพ
+              </span>
+              <span
+                class="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700"
+              >
+                Default Avatar
+              </span>
+            </div>
+          </div>
+          <div
+            class="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2.5"
+          >
+            <div
+              class="flex items-center gap-3"
+            >
+              <img
+                alt="Avatar มาลี ศรีสุข"
+                class="h-11 w-11 shrink-0 rounded-full border border-slate-200 object-cover"
+                src="data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20120%20120%22%20width%3D%22120%22%20height%3D%22120%22%3E%3Crect%20width%3D%22120%22%20height%3D%22120%22%20rx%3D%2260%22%20fill%3D%22%230284c7%22%2F%3E%3Ccircle%20cx%3D%2260%22%20cy%3D%2246%22%20r%3D%2220%22%20fill%3D%22%23ffffff%22%20opacity%3D%220.95%22%2F%3E%3Cpath%20d%3D%22M26%2C104%20C26%2C82%2040%2C74%2060%2C74%20C80%2C74%2094%2C82%2094%2C104%20Z%22%20fill%3D%22%23ffffff%22%20opacity%3D%220.95%22%2F%3E%3C%2Fsvg%3E"
+              />
+              <div
+                class="min-w-0 flex-1"
+              >
+                <div
+                  class="flex items-center justify-between gap-1"
+                >
+                  <h4
+                    class="font-semibold text-slate-900 truncate text-sm"
+                  >
+                    นาง
+                    มาลี
+                     
+                    ศรีสุข
+                  </h4>
+                  <span
+                    class="shrink-0 rounded-md bg-sky-50 px-2 py-0.5 font-mono text-xs font-bold text-sky-700 border border-sky-100"
+                  >
+                    205/4
+                  </span>
+                </div>
+                <p
+                  class="text-xs text-slate-500 mt-0.5 truncate"
+                >
+                  หมู่ที่ 2 บ้านห้องแซงใต้
+                   • ต.
+                  ห้องแซง
+                </p>
+              </div>
+            </div>
+            <div
+              class="flex items-center justify-between border-t border-slate-100 pt-2 text-[11px]"
+            >
+              <span
+                class="text-slate-400"
+              >
+                สถานะรูปภาพ
+              </span>
+              <span
+                class="rounded-md bg-slate-100 px-2 py-0.5 font-medium text-slate-700"
+              >
+                Default Avatar
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`Golden Snapshot Tests (Visual & Structural Characterization) > matches golden text output for ESC/POS Thermal Receipt 1`] = `
+"องค์การบริหารส่วนตำบลห้องแซง
+ใบแจ้งหนี้ค่าน้ำประปา
+--------------------------------
+เลขที่บิล : INV-2569-11-0001
+ประจำงวด : 11/2569
+วันที่จด   : 2026-11-20 10:30
+--------------------------------
+เลขมิเตอร์: HSG-0001
+ผู้ใช้น้ำ  : นายสมหมาย ใจดี
+บ้านเลขที่: 101/1 หมู่ที่ 1
+--------------------------------
+เลขครั้งก่อน: 120 m3
+เลขครั้งนี้ : 135 m3
+หน่วยที่ใช้ : 15 m3
+--------------------------------
+ค่าน้ำประปา      : 85.00 บ.
+ค่ารักษามิเตอร์   : 10.00 บ.
+VAT 7%          : 6.65 บ.
+--------------------------------
+ยอดชำระสุทธิ     : 101.65 บาท
+--------------------------------
+สแกนเช็คบิล/ชำระเงินผ่าน LINE LIFF
+LIFF Ref: HSG-0001"
+`;
