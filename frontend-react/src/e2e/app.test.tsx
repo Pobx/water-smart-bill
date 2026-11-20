@@ -80,4 +80,39 @@ describe('Water Smart Bill E2E User Journeys (shadcn/ui + v0.app style)', () => 
     expect(screen.getByText(/LINE LIFF • ระบบเช็คค่าน้ำประปาสำหรับเจ้าของบ้าน/i)).toBeInTheDocument()
     expect(screen.getAllByText(/HSG-0001/i).length).toBeGreaterThan(0)
   })
+
+  it('dynamically adapts Left Menu items based on active RBAC user role', async () => {
+    render(<App />)
+
+    // Admin has access to all left menu items
+    const roleSelect = screen.getByLabelText('เลือกบทบาท (Role)')
+    expect(screen.getByRole('button', { name: /1. ข้อมูล อบต./i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /4. การเงิน & รับชำระ/i })).toBeInTheDocument()
+
+    // Switch role to Field Reader (tabwater_staff)
+    fireEvent.change(roleSelect, { target: { value: 'tabwater_staff' } })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /4. การเงิน & รับชำระ/i })).not.toBeInTheDocument()
+    })
+
+    // Switch role to Finance Staff (finance_staff)
+    fireEvent.change(roleSelect, { target: { value: 'finance_staff' } })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /4. การเงิน & รับชำระ/i })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
+    })
+
+    // Switch role to Citizen Resident (user)
+    fireEvent.change(roleSelect, { target: { value: 'user' } })
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /5. LINE LIFF ลูกบ้าน/i })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /4. การเงิน & รับชำระ/i })).not.toBeInTheDocument()
+    })
+  })
 })
