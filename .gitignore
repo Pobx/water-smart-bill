@@ -22,3 +22,10 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Video rendering intermediate files
+video-tutorial/output/snapshots/*_part*.png
+video-tutorial/output/snapshots/*.mp4
+video-tutorial/output/snapshots/segments_list.txt
+video-tutorial/assets/audio/_tmp_*
+

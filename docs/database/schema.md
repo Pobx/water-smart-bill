@@ -274,6 +274,6 @@ erDiagram
 
 | วันที่ | Migration File | รายละเอียดการเปลี่ยนแปลง | ADR อ้างอิง |
 | :---: | :--- | :--- | :---: |
-| 2026-11-18 | `000001_water_smart_bill_schema.up.sql` | สร้างตารางหลักของระบบ Water Smart Bill ต่อยอดจาก `pios` พร้อมเพิ่ม `house_no`, Default Avatar support, `client_reading_id` สำหรับ Offline Sync, และ `reading_photo_url` / `ocr_confidence` สำหรับระบบ OCR | [ADR 0002](../adr/0002-water-smart-bill-system-architecture.md), [ADR 0003](../adr/0003-offline-first-sync-bluetooth-escpos-and-hybrid-ocr.md) |
+| 2026-11-18 | `000001_water_smart_bill_schema.up.sql` | สร้างตารางหลักของระบบ Water Smart Bill พร้อมเพิ่ม `house_no`, Default Avatar support, `client_reading_id` สำหรับ Offline Sync, และ `reading_photo_url` / `ocr_confidence` สำหรับระบบ OCR | [ADR 0002](../adr/0002-water-smart-bill-system-architecture.md), [ADR 0003](../adr/0003-offline-first-sync-bluetooth-escpos-and-hybrid-ocr.md) |
 | 2026-11-18 | `000002_enable_rls.up.sql` | เปิดใช้งาน PostgreSQL Row-Level Security (RLS) แยกข้อมูลตาม `org_id` | [ADR 0002](../adr/0002-water-smart-bill-system-architecture.md) |
 | 2026-11-18 | `000003_add_payment_receipt_fields.up.sql` | เพิ่มคอลัมน์ `payment_method`, `receipt_no`, `paid_at`, `cashier_id` บนตาราง `tw_invoice` สำหรับระบบโต๊ะการเงินและออกใบเสร็จ | [ADR 0006](../adr/0006-finance-cashier-invoicing-receipts-and-csv-export.md) |
