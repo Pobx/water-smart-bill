@@ -2,9 +2,10 @@ openapi: 3.0.3
 info:
   title: Water Smart Bill API (ระบบจัดการค่าน้ำประปาสำหรับ อบต.)
   description: |
-    RESTful API สำหรับระบบบริหารจัดการค่าน้ำประปา อบต. (ต่อยอดจากระบบ PIOS)
+    RESTful API สำหรับระบบบริหารจัดการค่าน้ำประปา อบต. (Water Smart Bill)
     - เปิดให้เข้าถึง Swagger เฉพาะ Non-Production (`APP_ENV != production`)
-    - รองรับ Keycloak OIDC + Redis JWT Blacklist เมื่อ Logout
+    - รองรับ Keycloak OIDC Authentication และ Session Revocation เมื่อ Logout
+    - มีระบบ Role-Based Access Control (RBAC) ควบคุมสิทธิ์การเข้าถึงราย Endpoint
     - รองรับ Offline-First Sync, AI/OCR Meter Reading, Bluetooth Receipt Printing และ LINE LIFF
   version: 1.0.0
 servers:
@@ -25,12 +26,12 @@ paths:
           description: OK
   /api/v1/auth/logout:
     post:
-      summary: Logout and blacklist current JWT JTI in Redis
+      summary: Sign out and revoke active user session
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Token revoked and blacklisted
+          description: Session revoked successfully
   /api/v1/me:
     get:
       summary: Current authenticated user profile & claims

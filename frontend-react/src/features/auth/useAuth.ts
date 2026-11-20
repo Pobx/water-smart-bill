@@ -22,6 +22,7 @@ export function useAuth() {
     blacklistedTokens,
     showKeycloakModal,
     setShowKeycloakModal,
+    handleLogout: handleLogoutAndBlacklistJwt,
     handleLogoutAndBlacklistJwt,
     handleSignInWithKeycloak,
   }

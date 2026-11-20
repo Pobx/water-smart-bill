@@ -31,6 +31,26 @@ func (stubVerifier) VerifyAccessToken(_ context.Context, rawToken string) (appli
 			ExpiresAt: time.Now().Add(30 * time.Minute),
 		}, nil
 	}
+	if rawToken == "valid-reader-token" {
+		return application.Claims{
+			JTI:       "jti-reader-token-1",
+			Subject:   "sub-reader",
+			Username:  "reader_somchai",
+			Roles:     []string{application.RoleTabwaterStaff},
+			OrgID:     &orgID,
+			ExpiresAt: time.Now().Add(30 * time.Minute),
+		}, nil
+	}
+	if rawToken == "valid-user-token" {
+		return application.Claims{
+			JTI:       "jti-user-token-1",
+			Subject:   "sub-user",
+			Username:  "user_sommai",
+			Roles:     []string{application.RoleUser},
+			OrgID:     &orgID,
+			ExpiresAt: time.Now().Add(30 * time.Minute),
+		}, nil
+	}
 	return application.Claims{}, application.ErrUnauthorized
 }
 
@@ -181,3 +201,74 @@ func TestHTTPServerWaterBillEndpoints(t *testing.T) {
 		t.Fatalf("expected 200 OK with CSV output, got %d: %s", recCSV.Code, recCSV.Body.String())
 	}
 }
+
+func TestRequireRolesRBAC(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	bl := blacklist.NewStore("")
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    bl,
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// 1. Staff Reader trying to access Admin-only Rate Config POST -> 403 Forbidden
+	rateBody, _ := json.Marshal(map[string]any{
+		"meter_type_name": "ครัวเรือนทั่วไป",
+		"reserve_fee":     25.0,
+		"vat":              7.0,
+		"tiers": []map[string]any{
+			{"tier_order": 1, "min_units": 0, "rate_per_unit": 5.0},
+		},
+	})
+	reqRate := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/rate-configs", bytes.NewReader(rateBody))
+	reqRate.Header.Set("Authorization", "Bearer valid-reader-token")
+	reqRate.Header.Set("Content-Type", "application/json")
+	recRate := httptest.NewRecorder()
+	srv.ServeHTTP(recRate, reqRate)
+	if recRate.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for reader calling rate config, got %d: %s", recRate.Code, recRate.Body.String())
+	}
+	if !strings.Contains(recRate.Body.String(), "insufficient role permissions") {
+		t.Fatalf("expected 'insufficient role permissions' message, got %s", recRate.Body.String())
+	}
+
+	// 2. Staff Reader trying to access Finance-only Invoice Pay POST -> 403 Forbidden
+	payBody, _ := json.Marshal(map[string]any{"payment_method": "cash"})
+	reqPay := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/invoices/1/pay", bytes.NewReader(payBody))
+	reqPay.Header.Set("Authorization", "Bearer valid-reader-token")
+	reqPay.Header.Set("Content-Type", "application/json")
+	recPay := httptest.NewRecorder()
+	srv.ServeHTTP(recPay, reqPay)
+	if recPay.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for reader calling pay invoice, got %d", recPay.Code)
+	}
+
+	// 3. Citizen (User role) trying to access Meter Reading POST -> 403 Forbidden
+	readBody, _ := json.Marshal(map[string]any{
+		"meter_id":        1,
+		"period_id":       1,
+		"current_reading": 120,
+	})
+	reqReadUser := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/readings", bytes.NewReader(readBody))
+	reqReadUser.Header.Set("Authorization", "Bearer valid-user-token")
+	reqReadUser.Header.Set("Content-Type", "application/json")
+	recReadUser := httptest.NewRecorder()
+	srv.ServeHTTP(recReadUser, reqReadUser)
+	if recReadUser.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for citizen calling meter reading, got %d", recReadUser.Code)
+	}
+
+	// 4. Admin calling Admin-only Rate Config POST -> 200 OK (Allowed)
+	reqAdminRate := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/rate-configs", bytes.NewReader(rateBody))
+	reqAdminRate.Header.Set("Authorization", "Bearer valid-admin-token")
+	reqAdminRate.Header.Set("Content-Type", "application/json")
+	recAdminRate := httptest.NewRecorder()
+	srv.ServeHTTP(recAdminRate, reqAdminRate)
+	if recAdminRate.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for admin calling rate config, got %d: %s", recAdminRate.Code, recAdminRate.Body.String())
+	}
+}
+
