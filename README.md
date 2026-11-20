@@ -39,10 +39,24 @@
 
 ## การรันทดสอบและใช้งาน (Quick Start)
 
+### วิธีที่ 1: รันบนเครื่องคอมพิวเตอร์ของคุณ (1-Click Local Run)
+```bash
+# สำหรับ macOS / Linux:
+./run-local.sh
+
+# สำหรับ Windows:
+ดับเบิ้ลคลิกไฟล์ run-local.bat หรือรันใน Command Prompt
+```
+
+### วิธีที่ 2: รันผ่านคำสั่งปกติ
 ```bash
 # รันชุดทดสอบทั้งหมด (Go Backend + React Frontend)
 make test
 
-# รันระบบทั้งหมดด้วย Docker Compose (Container-First Demo)
+# รันเฉพาะ Frontend React
+cd frontend-react && npm install && npm run dev
+
+# รันระบบทั้งหมดด้วย Docker Compose (Keycloak + Postgres + Redis + API + Frontend)
 make up
 ```
+
