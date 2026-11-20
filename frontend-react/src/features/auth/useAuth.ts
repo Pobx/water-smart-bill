@@ -19,12 +19,12 @@ export const ROLE_OPTIONS: RoleOption[] = [
 export function useAuth() {
   const [jwtToken, setJwtToken] = useState('demo-jwt-hsg-2569-active')
   const [currentRole, setCurrentRole] = useState<UserRole>('admin')
-  const [blacklistedTokens, setBlacklistedTokens] = useState<string[]>([])
+  const [revokedTokens, setRevokedTokens] = useState<string[]>([])
   const [showKeycloakModal, setShowKeycloakModal] = useState(false)
 
-  function handleLogoutAndBlacklistJwt() {
-    if (!blacklistedTokens.includes(jwtToken)) {
-      setBlacklistedTokens([jwtToken, ...blacklistedTokens])
+  function handleLogout() {
+    if (!revokedTokens.includes(jwtToken)) {
+      setRevokedTokens([jwtToken, ...revokedTokens])
     }
     setShowKeycloakModal(true)
   }
@@ -38,11 +38,10 @@ export function useAuth() {
     jwtToken,
     currentRole,
     setCurrentRole,
-    blacklistedTokens,
+    revokedTokens,
     showKeycloakModal,
     setShowKeycloakModal,
-    handleLogout: handleLogoutAndBlacklistJwt,
-    handleLogoutAndBlacklistJwt,
+    handleLogout,
     handleSignInWithKeycloak,
   }
 }
