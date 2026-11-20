@@ -16,13 +16,13 @@ export function AuthModal({ jwtToken, showKeycloakModal, onSignIn }: AuthModalPr
     >
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
         <span className="rounded-md bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700">
-          JWT Blacklisted in Redis ({jwtToken})
+          ออกจากระบบแล้ว ({jwtToken})
         </span>
         <h3 className="mt-3 text-lg font-bold text-slate-900">
           Keycloak OIDC Login (Customized with Tailwind CSS)
         </h3>
         <p className="mt-1 text-xs text-slate-500">
-          Token เดิมถูกบันทึกเข้า Redis Blacklist เรียบร้อยแล้ว กรุณาเข้าสู่ระบบใหม่
+          เซสชันเดิมถูกยกเลิกเรียบร้อยแล้ว กรุณาเข้าสู่ระบบใหม่เพื่อใช้งาน
         </p>
         <div className="mt-4 space-y-3">
           <input

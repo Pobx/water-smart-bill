@@ -95,32 +95,53 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	api.GET("/me", restHandler.GetMe)
 
 	// Master Data: SAO (อบต.), Tambons, Villages (Zones/Subzones), Homeowners & Avatars
+	rolesAdminOnly := []string{application.RoleAdmin, application.RoleSuperAdmin}
+	rolesStaffOrAdmin := []string{application.RoleTabwaterStaff, application.RoleAdmin, application.RoleSuperAdmin}
+	rolesFinanceOrAdmin := []string{application.RoleFinanceStaff, application.RoleAdmin, application.RoleSuperAdmin}
+
 	api.GET("/organizations", restHandler.GetOrganization)
-	api.POST("/organizations", restHandler.UpsertOrganization)
+	api.POST("/organizations", restHandler.UpsertOrganization, RequireRoles(rolesAdminOnly))
 	api.GET("/locations/tambons", restHandler.ListTambons)
 	api.GET("/zones", restHandler.ListZones)
-	api.POST("/zones", restHandler.CreateZone)
+	api.POST("/zones", restHandler.CreateZone, RequireRoles(rolesAdminOnly))
 	api.GET("/users", restHandler.ListHomeowners)
-	api.POST("/users", restHandler.CreateHomeowner)
-	api.POST("/users/:id/avatar", restHandler.UploadHomeownerAvatar)
+	api.POST("/users", restHandler.CreateHomeowner, RequireRoles(rolesStaffOrAdmin))
+	api.POST("/users/:id/avatar", restHandler.UploadHomeownerAvatar, RequireRoles(rolesStaffOrAdmin))
 
 	// Tariffs, Periods, Meters & Readings
 	api.GET("/tabwater/rate-configs", restHandler.GetActiveRateConfig)
-	api.POST("/tabwater/rate-configs", restHandler.SaveRateConfig)
+	api.POST("/tabwater/rate-configs", restHandler.SaveRateConfig, RequireRoles(rolesAdminOnly))
 	api.GET("/tabwater/periods", restHandler.ListPeriods)
-	api.POST("/tabwater/periods", restHandler.CreatePeriod)
+	api.POST("/tabwater/periods", restHandler.CreatePeriod, RequireRoles(rolesAdminOnly))
 	api.GET("/tabwater/meters", restHandler.ListMeters)
-	api.POST("/tabwater/meters", restHandler.CreateMeter)
-	api.GET("/tabwater/offline-bundle", restHandler.GetOfflineBundle)
-	api.POST("/tabwater/ocr/meter-read", restHandler.ParseMeterOCR)
-	api.POST("/tabwater/readings", restHandler.RecordMeterReading)
-	api.POST("/tabwater/readings/sync", restHandler.SyncOfflineReadings)
+	api.POST("/tabwater/meters", restHandler.CreateMeter, RequireRoles(rolesStaffOrAdmin))
+	api.GET("/tabwater/offline-bundle", restHandler.GetOfflineBundle, RequireRoles(rolesStaffOrAdmin))
+	api.POST("/tabwater/ocr/meter-read", restHandler.ParseMeterOCR, RequireRoles(rolesStaffOrAdmin))
+	api.POST("/tabwater/readings", restHandler.RecordMeterReading, RequireRoles(rolesStaffOrAdmin))
+	api.POST("/tabwater/readings/sync", restHandler.SyncOfflineReadings, RequireRoles(rolesStaffOrAdmin))
 	api.GET("/tabwater/invoices", restHandler.ListInvoices)
-	api.POST("/tabwater/invoices/:id/pay", restHandler.PayInvoice)
-	api.GET("/tabwater/reports/collections", restHandler.GetCollectionReport)
-	api.GET("/water-bills/reports/collections", restHandler.GetCollectionReport)
+	api.POST("/tabwater/invoices/:id/pay", restHandler.PayInvoice, RequireRoles(rolesFinanceOrAdmin))
+	api.GET("/tabwater/reports/collections", restHandler.GetCollectionReport, RequireRoles(rolesFinanceOrAdmin))
+	api.GET("/water-bills/reports/collections", restHandler.GetCollectionReport, RequireRoles(rolesFinanceOrAdmin))
 
 	return e
+}
+
+// RequireRoles returns Echo middleware that enforces Role-Based Access Control (RBAC).
+// It accepts exactly 1 parameter (allowedRoles []string) containing multiple allowed role values.
+func RequireRoles(allowedRoles []string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			claims, ok := c.Get(handler.ClaimsContextKey).(application.Claims)
+			if !ok {
+				return handler.WriteProblem(c, http.StatusUnauthorized, "Unauthorized", "missing authentication claims")
+			}
+			if len(allowedRoles) > 0 && !claims.HasAnyRole(allowedRoles...) {
+				return handler.WriteProblem(c, http.StatusForbidden, "Forbidden", "insufficient role permissions")
+			}
+			return next(c)
+		}
+	}
 }
 
 func authMiddleware(cfg ServerConfig) echo.MiddlewareFunc {
@@ -160,7 +181,7 @@ func authMiddleware(cfg ServerConfig) echo.MiddlewareFunc {
 			if cfg.Blacklist != nil && claims.JTI != "" {
 				revoked, err := cfg.Blacklist.IsRevoked(c.Request().Context(), claims.JTI)
 				if err != nil || revoked {
-					return handler.WriteProblem(c, http.StatusUnauthorized, "Unauthorized", "token has been logged out and blacklisted")
+					return handler.WriteProblem(c, http.StatusUnauthorized, "Unauthorized", "session has been revoked or logged out")
 				}
 			}
 

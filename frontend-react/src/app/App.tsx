@@ -54,7 +54,7 @@ export function App() {
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-bold tracking-tight text-slate-900">Water Smart Bill</h1>
                 <span className="rounded-md bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-600/20">
-                  SAO Platform • ต่อยอดจาก PIOS
+                  ระบบบริหารจัดการน้ำประปา อบต.
                 </span>
               </div>
               <p className="text-xs text-slate-500">
@@ -93,10 +93,10 @@ export function App() {
 
             <button
               type="button"
-              onClick={auth.handleLogoutAndBlacklistJwt}
+              onClick={auth.handleLogout}
               className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
             >
-              Logout (Blacklist JWT)
+              ออกจากระบบ
             </button>
           </div>
         </div>
