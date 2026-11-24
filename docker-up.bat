@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 > nul
 REM Water Smart Bill - run full stack with Docker Compose
-REM Usage: docker-up.bat [up|down|logs|reset]   (default: up)
+REM Usage: docker-up.bat [up|down|logs|reset|rebuild]   (default: up)
 cd /d "%~dp0"
 set ACTION=%1
 if "%ACTION%"=="" set ACTION=up
@@ -40,6 +40,12 @@ if "%ACTION%"=="up" (
 ) else if "%ACTION%"=="reset" (
     echo ลบข้อมูลฐานข้อมูลทั้งหมด
     %COMPOSE% down -v
+) else if "%ACTION%"=="rebuild" (
+    echo ซ่อม line ending CRLF to LF ของ script ใน container...
+    powershell -NoProfile -Command "Get-ChildItem frontend-react/docker/*.sh,deploy/postgres/init/*.sh | ForEach-Object { $c=[IO.File]::ReadAllText($_.FullName) -replace \"`r\",''; [IO.File]::WriteAllText($_.FullName,$c) }"
+    %COMPOSE% down -v
+    %COMPOSE% build --no-cache
+    call "%~f0" up
 ) else (
-    echo Usage: docker-up.bat [up^|down^|logs^|reset]
+    echo Usage: docker-up.bat [up^|down^|logs^|reset^|rebuild]
 )

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Water Smart Bill — run full stack with Docker Compose
-# Usage: ./docker-up.sh [up|down|logs|reset]   (default: up)
+# Usage: ./docker-up.sh [up|down|logs|reset|rebuild]   (default: up)
 set -e
 cd "$(dirname "$0")"
 COMPOSE="docker compose -f deploy/docker-compose.yml"
@@ -28,5 +28,16 @@ case "${1:-up}" in
   down)  $COMPOSE down ;;
   logs)  $COMPOSE logs -f --tail=100 ;;
   reset) echo "⚠️ ลบข้อมูลฐานข้อมูลทั้งหมด"; $COMPOSE down -v ;;
-  *) echo "Usage: $0 [up|down|logs|reset]"; exit 1 ;;
+  rebuild)
+    echo "🔧 ซ่อมไฟล์ line ending (CRLF -> LF) ของ script ที่ใช้ใน container..."
+    for f in frontend-react/docker/*.sh deploy/postgres/init/*.sh; do
+      [ -f "$f" ] && sed -i 's/\r$//' "$f" && echo "   fixed: $f"
+    done
+    echo "🧹 ล้าง container/volume เดิม (ข้อมูล database ทดสอบจะถูกลบ)..."
+    $COMPOSE down -v
+    echo "🏗️  build ใหม่แบบไม่ใช้ cache..."
+    $COMPOSE build --no-cache
+    $0 up
+    ;;
+  *) echo "Usage: $0 [up|down|logs|reset|rebuild]"; exit 1 ;;
 esac

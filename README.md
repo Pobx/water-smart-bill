@@ -50,8 +50,8 @@
 
 ### รันทั้งระบบด้วย Docker Compose (Postgres + Redis + Keycloak + API + Frontend + Nginx)
 ```bash
-# macOS / Linux:  ./docker-up.sh [up|down|logs|reset]
-# Windows:        docker-up.bat [up|down|logs|reset]
+# macOS / Linux:  ./docker-up.sh [up|down|logs|reset|rebuild]
+# Windows:        docker-up.bat [up|down|logs|reset|rebuild]  (rebuild = ซ่อม+build ใหม่ทั้งหมด ใช้เมื่อ container ขึ้นไม่ได้)
 # เปิดเว็บที่ http://localhost (ต้องติดตั้งและเปิด Docker Desktop ก่อน)
 ```
 
