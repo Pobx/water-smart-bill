@@ -17,7 +17,7 @@ if command -v docker &> /dev/null && docker compose version &> /dev/null; then
     echo "🚀 กำลังสตาร์ททุกเซอร์วิสผ่าน Docker Compose..."
     docker compose -f deploy/docker-compose.yml up -d --build
     echo "✅ ระบบพร้อมใช้งานแล้ว!"
-    echo "👉 Frontend Web: http://localhost:5173"
+    echo "👉 Web (Gateway): http://localhost"
     echo "👉 Backend API:  http://localhost:8080"
     echo "👉 Swagger Doc:  http://localhost:8080/swagger/index.html"
     exit 0

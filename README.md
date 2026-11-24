@@ -48,6 +48,13 @@
 ดับเบิ้ลคลิกไฟล์ run-local.bat หรือรันใน Command Prompt
 ```
 
+### รันทั้งระบบด้วย Docker Compose (Postgres + Redis + Keycloak + API + Frontend + Nginx)
+```bash
+# macOS / Linux:  ./docker-up.sh [up|down|logs|reset]
+# Windows:        docker-up.bat [up|down|logs|reset]
+# เปิดเว็บที่ http://localhost (ต้องติดตั้งและเปิด Docker Desktop ก่อน)
+```
+
 ### วิธีที่ 2: รันผ่านคำสั่งปกติ
 ```bash
 # รันชุดทดสอบทั้งหมด (Go Backend + React Frontend)
