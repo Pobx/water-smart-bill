@@ -30,6 +30,20 @@
   ],
   "users": [
     {
+      "username": "admin_hsg",
+      "enabled": true,
+      "firstName": "ผู้ดูแลระบบ",
+      "lastName": "อบต.ห้องแซง",
+      "email": "admin@hsg-sao.go.th",
+      "attributes": {
+        "org_id": ["1"]
+      },
+      "credentials": [
+        { "type": "password", "value": "water1234", "temporary": false }
+      ],
+      "realmRoles": ["admin"]
+    },
+    {
       "username": "somchai_staff",
       "enabled": true,
       "firstName": "สมชาย",
@@ -41,7 +55,35 @@
       "credentials": [
         { "type": "password", "value": "water1234", "temporary": false }
       ],
-      "realmRoles": ["admin", "tabwater_staff", "finance_staff"]
+      "realmRoles": ["tabwater_staff"]
+    },
+    {
+      "username": "finance_naree",
+      "enabled": true,
+      "firstName": "นารี",
+      "lastName": "การเงิน",
+      "email": "finance@hsg-sao.go.th",
+      "attributes": {
+        "org_id": ["1"]
+      },
+      "credentials": [
+        { "type": "password", "value": "water1234", "temporary": false }
+      ],
+      "realmRoles": ["finance_staff"]
+    },
+    {
+      "username": "resident_sommai",
+      "enabled": true,
+      "firstName": "สมหมาย",
+      "lastName": "ใจดี",
+      "email": "sommai@hsg-sao.go.th",
+      "attributes": {
+        "org_id": ["1"]
+      },
+      "credentials": [
+        { "type": "password", "value": "water1234", "temporary": false }
+      ],
+      "realmRoles": ["user"]
     }
   ]
 }

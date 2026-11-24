@@ -356,4 +356,62 @@ func TestUploadHomeownerAvatarSecurityValidation(t *testing.T) {
 	}
 }
 
+func TestRoleScopedDemoTokensRBAC(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	bl := blacklist.NewStore("")
+
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:          "demo",
+		AllowDemoTokens: true,
+		Blacklist:       bl,
+		WaterService:    svc,
+		UploadDir:       t.TempDir(),
+	})
+
+	// 1. tabwater_staff demo token cannot access finance collection report (403 Forbidden)
+	reqStaffFinance := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/reports/collections", nil)
+	reqStaffFinance.Header.Set("Authorization", "Bearer demo-jwt-role-tabwater_staff-123")
+	recStaffFinance := httptest.NewRecorder()
+	srv.ServeHTTP(recStaffFinance, reqStaffFinance)
+	if recStaffFinance.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for tabwater_staff accessing finance report, got %d: %s", recStaffFinance.Code, recStaffFinance.Body.String())
+	}
+
+	// 2. finance_staff demo token CAN access finance collection report (200 OK)
+	reqFinanceOK := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/reports/collections", nil)
+	reqFinanceOK.Header.Set("Authorization", "Bearer demo-jwt-role-finance_staff-123")
+	recFinanceOK := httptest.NewRecorder()
+	srv.ServeHTTP(recFinanceOK, reqFinanceOK)
+	if recFinanceOK.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for finance_staff accessing finance report, got %d: %s", recFinanceOK.Code, recFinanceOK.Body.String())
+	}
+
+	// 3. user demo token cannot access finance collection report (403 Forbidden)
+	reqUserFinance := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/reports/collections", nil)
+	reqUserFinance.Header.Set("Authorization", "Bearer demo-jwt-role-user-123")
+	recUserFinance := httptest.NewRecorder()
+	srv.ServeHTTP(recUserFinance, reqUserFinance)
+	if recUserFinance.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for user accessing finance report, got %d", recUserFinance.Code)
+	}
+
+	// 4. When AllowDemoTokens is false (prod), demo tokens must be rejected (401 Unauthorized)
+	prodSrv := rest.NewServer(rest.ServerConfig{
+		AppEnv:          "production",
+		AllowDemoTokens: false,
+		Verifier:        stubVerifier{},
+		Blacklist:       bl,
+		WaterService:    svc,
+		UploadDir:       t.TempDir(),
+	})
+	reqProdDemo := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	reqProdDemo.Header.Set("Authorization", "Bearer demo-jwt-role-admin-123")
+	recProdDemo := httptest.NewRecorder()
+	prodSrv.ServeHTTP(recProdDemo, reqProdDemo)
+	if recProdDemo.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized for demo token when AllowDemoTokens=false, got %d", recProdDemo.Code)
+	}
+}
+
 

@@ -1,4 +1,4 @@
 export { AuthModal } from './AuthModal'
-export { useAuth, ROLE_OPTIONS, type UserRole, type RoleOption } from './useAuth'
-export { authApi } from './authApi'
-
+export { LoginScreen } from './LoginScreen'
+export { useAuth, ROLE_OPTIONS, type UserRole, type RoleOption, type AuthSession } from './useAuth'
+export { authApi, DEMO_ACCOUNTS, parseJwtPayload, extractAppRoles } from './authApi'
