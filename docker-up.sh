@@ -31,13 +31,43 @@ do_up() {
   else
     echo "[*] ยังไม่เคยรัน: เริ่มต้นใหม่"
   fi
-  # 2) รันของใหม่ (build ใหม่)
-  echo "[*] กำลัง build และสตาร์ท ครั้งแรกอาจใช้เวลาหลายนาที..."
+  # 2) สตาร์ท postgres ก่อนและสร้างฐานข้อมูล keycloak อัตโนมัติถ้ายังไม่มี
+  echo "[*] สตาร์ท postgres ก่อนเพื่อเตรียมฐานข้อมูล..."
+  if ! $COMPOSE up -d postgres; then
+    echo "[X] ไม่สามารถสตาร์ท postgres ได้ ดูรายละเอียดด้วย: ./docker-up.sh logs"
+    exit 1
+  fi
+  PG_USER="${POSTGRES_USER:-water}"
+  PG_DB="${POSTGRES_DB:-water_smart_bill}"
+  KC_DB="${KEYCLOAK_DB:-keycloak}"
+  echo "[*] รอ postgres พร้อมรับการเชื่อมต่อ..."
+  PG_READY=0
+  for _ in $(seq 1 30); do
+    if docker exec water-postgres pg_isready -U "$PG_USER" -d "$PG_DB" >/dev/null 2>&1 && \
+       docker exec water-postgres psql -U "$PG_USER" -d "$PG_DB" -tAc "SELECT 1" >/dev/null 2>&1; then
+      PG_READY=1
+      break
+    fi
+    sleep 2
+  done
+  if [ "$PG_READY" -ne 1 ]; then
+    echo "[X] postgres ไม่พร้อมภายในเวลาที่กำหนด ดูรายละเอียดด้วย: ./docker-up.sh logs"
+    exit 1
+  fi
+  echo "[*] ตรวจสอบ/สร้างฐานข้อมูล $KC_DB อัตโนมัติ..."
+  if docker exec water-postgres psql -U "$PG_USER" -d "$PG_DB" -tAc "SELECT 1 FROM pg_database WHERE datname='$KC_DB'" | grep -q 1; then
+    echo "    - ฐานข้อมูล $KC_DB มีอยู่แล้ว"
+  else
+    docker exec water-postgres psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$KC_DB\";"
+    echo "    - สร้างฐานข้อมูล $KC_DB สำเร็จ"
+  fi
+  # 3) รันของใหม่ทั้งหมด (build ใหม่)
+  echo "[*] กำลัง build และสตาร์ทระบบทั้งหมด ครั้งแรกอาจใช้เวลาหลายนาที..."
   if ! $COMPOSE up -d --build; then
     echo "[X] เกิดข้อผิดพลาด ดูรายละเอียดด้วย: ./docker-up.sh logs"
     exit 1
   fi
-  # 3) backend ตรวจ/seed ฐานข้อมูลเองตอนสตาร์ท:
+  # 4) backend ตรวจ/seed ฐานข้อมูลเองตอนสตาร์ท:
   #    DB ว่าง = สร้าง schema + seed | schema/seed เปลี่ยน = apply ใหม่ | เท่าเดิม = ไม่ทำอะไร
   echo "[*] รอ backend ตรวจสอบฐานข้อมูล..."
   sleep 8

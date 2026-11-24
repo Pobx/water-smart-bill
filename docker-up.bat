@@ -52,12 +52,49 @@ if defined OLD (
     echo [*] ยังไม่เคยรัน: เริ่มต้นใหม่
 )
 
-REM 2) รันของใหม่ ^(build ใหม่^)
-echo [*] กำลัง build และสตาร์ท ครั้งแรกอาจใช้เวลาหลายนาที...
+REM 2) สตาร์ท postgres ก่อนและสร้างฐานข้อมูล keycloak อัตโนมัติถ้ายังไม่มี
+echo [*] สตาร์ท postgres ก่อนเพื่อเตรียมฐานข้อมูล...
+%COMPOSE% up -d postgres
+if errorlevel 1 goto :fail
+
+if not defined POSTGRES_USER set POSTGRES_USER=water
+if not defined POSTGRES_DB set POSTGRES_DB=water_smart_bill
+if not defined KEYCLOAK_DB set KEYCLOAK_DB=keycloak
+
+echo [*] รอ postgres พร้อมรับการเชื่อมต่อ...
+set PG_TRIES=0
+:wait_pg
+docker exec water-postgres pg_isready -U %POSTGRES_USER% -d %POSTGRES_DB% >nul 2>&1
+if errorlevel 1 goto :wait_pg_retry
+docker exec water-postgres psql -U %POSTGRES_USER% -d %POSTGRES_DB% -tAc "SELECT 1" >nul 2>&1
+if not errorlevel 1 goto :pg_ready
+:wait_pg_retry
+set /a PG_TRIES+=1
+if %PG_TRIES% GEQ 30 (
+    echo [X] postgres ไม่พร้อมภายในเวลาที่กำหนด
+    goto :fail
+)
+timeout /t 2 /nobreak >nul
+goto :wait_pg
+
+:pg_ready
+echo [*] ตรวจสอบ/สร้างฐานข้อมูล %KEYCLOAK_DB% อัตโนมัติ...
+set KC_EXISTS=
+for /f %%i in ('docker exec water-postgres psql -U %POSTGRES_USER% -d %POSTGRES_DB% -tAc "SELECT 1 FROM pg_database WHERE datname='%KEYCLOAK_DB%'" 2^>nul') do set KC_EXISTS=%%i
+if "%KC_EXISTS%"=="1" (
+    echo     - ฐานข้อมูล %KEYCLOAK_DB% มีอยู่แล้ว
+) else (
+    docker exec water-postgres psql -U %POSTGRES_USER% -d %POSTGRES_DB% -v ON_ERROR_STOP=1 -c "CREATE DATABASE %KEYCLOAK_DB%;"
+    if errorlevel 1 goto :fail
+    echo     - สร้างฐานข้อมูล %KEYCLOAK_DB% สำเร็จ
+)
+
+REM 3) รันของใหม่ทั้งหมด ^(build ใหม่^)
+echo [*] กำลัง build และสตาร์ทระบบทั้งหมด ครั้งแรกอาจใช้เวลาหลายนาที...
 %COMPOSE% up -d --build
 if errorlevel 1 goto :fail
 
-REM 3) ตรวจ/seed ฐานข้อมูล: backend จะทำเองตอนสตาร์ท
+REM 4) ตรวจ/seed ฐานข้อมูล: backend จะทำเองตอนสตาร์ท
 REM    - DB ว่าง = สร้าง schema + seed data
 REM    - schema/seed เปลี่ยน = apply ใหม่   - เท่าเดิม = ไม่ทำอะไร
 echo [*] รอ backend ตรวจสอบฐานข้อมูล...
