@@ -23,7 +23,10 @@ set COMPOSE=docker compose -f deploy/docker-compose.yml
 if "%ACTION%"=="up" (
     echo กำลัง build และสตาร์ททุกเซอร์วิส ครั้งแรกอาจใช้เวลาหลายนาที...
     %COMPOSE% up -d --build
-    if errorlevel 1 ( pause & exit /b 1 )
+    if errorlevel 1 (
+        pause
+        exit /b 1
+    )
     echo ระบบพร้อมใช้งาน!
     echo เว็บแอป Gateway: http://localhost
     echo Backend API:     http://localhost:8080
