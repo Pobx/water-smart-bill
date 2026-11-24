@@ -160,15 +160,7 @@ func authMiddleware(cfg ServerConfig) echo.MiddlewareFunc {
 			var err error
 
 			if cfg.AllowDemoTokens && strings.HasPrefix(rawToken, "demo-jwt-") {
-				orgID := int64(1)
-				claims = application.Claims{
-					JTI:       rawToken,
-					Subject:   "demo-staff-1",
-					Username:  "somchai_staff",
-					Roles:     []string{application.RoleAdmin, application.RoleTabwaterStaff, application.RoleFinanceStaff},
-					OrgID:     &orgID,
-					ExpiresAt: time.Now().Add(2 * time.Hour),
-				}
+				claims = buildDemoClaims(rawToken)
 			} else if cfg.Verifier != nil {
 				claims, err = cfg.Verifier.VerifyAccessToken(c.Request().Context(), rawToken)
 				if err != nil {
@@ -189,4 +181,36 @@ func authMiddleware(cfg ServerConfig) echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+func buildDemoClaims(rawToken string) application.Claims {
+	orgID := int64(1)
+	base := application.Claims{
+		JTI:       rawToken,
+		OrgID:     &orgID,
+		ExpiresAt: time.Now().Add(2 * time.Hour),
+	}
+	switch {
+	case strings.HasPrefix(rawToken, "demo-jwt-role-admin-"):
+		base.Subject = "demo-admin-1"
+		base.Username = "admin_hsg"
+		base.Roles = []string{application.RoleAdmin}
+	case strings.HasPrefix(rawToken, "demo-jwt-role-tabwater_staff-"):
+		base.Subject = "demo-staff-1"
+		base.Username = "somchai_staff"
+		base.Roles = []string{application.RoleTabwaterStaff}
+	case strings.HasPrefix(rawToken, "demo-jwt-role-finance_staff-"):
+		base.Subject = "demo-finance-1"
+		base.Username = "finance_naree"
+		base.Roles = []string{application.RoleFinanceStaff}
+	case strings.HasPrefix(rawToken, "demo-jwt-role-user-"):
+		base.Subject = "demo-user-1"
+		base.Username = "resident_sommai"
+		base.Roles = []string{application.RoleUser}
+	default:
+		base.Subject = "demo-staff-1"
+		base.Username = "somchai_staff"
+		base.Roles = []string{application.RoleAdmin, application.RoleTabwaterStaff, application.RoleFinanceStaff}
+	}
+	return base
 }

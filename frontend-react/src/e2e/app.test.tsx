@@ -1,10 +1,33 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { App } from '@/app/App'
 
+async function signInAs(username: string, password = 'water1234') {
+  fireEvent.change(screen.getByLabelText('ชื่อผู้ใช้'), { target: { value: username } })
+  fireEvent.change(screen.getByLabelText('รหัสผ่าน'), { target: { value: password } })
+  fireEvent.click(screen.getByRole('button', { name: /เข้าสู่ระบบ/i }))
+  await waitFor(() => {
+    expect(screen.getByLabelText('Left Sidebar')).toBeInTheDocument()
+  })
+}
+
 describe('Water Smart Bill E2E User Journeys (shadcn/ui + v0.app style)', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new TypeError('Offline fallback for E2E unit test'))
+    )
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    sessionStorage.clear()
+  })
+
   it('renders Master Data (อบต., ตำบล, หมู่บ้าน, เจ้าของบ้าน + Default Avatar) and allows adding a homeowner', async () => {
     render(<App />)
+    await signInAs('admin_hsg')
 
     expect(screen.getByText(/Water Smart Bill/i)).toBeInTheDocument()
     expect(screen.getAllByText(/องค์การบริหารส่วนตำบลห้องแซง/i).length).toBeGreaterThan(0)
@@ -27,6 +50,7 @@ describe('Water Smart Bill E2E User Journeys (shadcn/ui + v0.app style)', () => 
 
   it('supports Offline-First meter reading, AI OCR scan, and Bluetooth ESC/POS receipt printing', async () => {
     render(<App />)
+    await signInAs('somchai_staff')
 
     // Navigate to Field Meter Reader tab
     fireEvent.click(screen.getByRole('button', { name: /จดมิเตอร์ & ออกบิล Bluetooth/i }))
@@ -46,6 +70,7 @@ describe('Water Smart Bill E2E User Journeys (shadcn/ui + v0.app style)', () => 
 
   it('navigates to Tariffs & Meters tab and verifies progressive tiers and meter table', async () => {
     render(<App />)
+    await signInAs('admin_hsg')
 
     fireEvent.click(screen.getByRole('button', { name: /อัตราค่าน้ำ & ทะเบียนมิเตอร์น้ำ/i }))
 
@@ -56,6 +81,7 @@ describe('Water Smart Bill E2E User Journeys (shadcn/ui + v0.app style)', () => 
 
   it('navigates to Finance & Cashier tab, searches invoices, and simulates counter payment', async () => {
     render(<App />)
+    await signInAs('finance_naree')
 
     fireEvent.click(screen.getByRole('button', { name: /การเงิน & รับชำระ/i }))
 
@@ -74,45 +100,50 @@ describe('Water Smart Bill E2E User Journeys (shadcn/ui + v0.app style)', () => 
 
   it('renders LINE LIFF Resident Portal for homeowners to inspect water bills and payment history', async () => {
     render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: /LINE LIFF ลูกบ้าน/i }))
+    await signInAs('resident_sommai')
 
     expect(screen.getByText(/LINE LIFF • ระบบเช็คค่าน้ำประปาสำหรับเจ้าของบ้าน/i)).toBeInTheDocument()
     expect(screen.getAllByText(/HSG-0001/i).length).toBeGreaterThan(0)
   })
 
-  it('dynamically adapts Left Menu items based on active RBAC user role', async () => {
+  it('dynamically adapts Left Menu items based on logged-in RBAC user role', async () => {
     render(<App />)
 
-    // Admin has access to all left menu items
-    const roleSelect = screen.getByLabelText('เลือกบทบาท (Role)')
+    // 1. Admin has access to all left menu items
+    await signInAs('admin_hsg')
     expect(screen.getByRole('button', { name: /1. ข้อมูล อบต./i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /4. การเงิน & รับชำระ/i })).toBeInTheDocument()
 
-    // Switch role to Field Reader (tabwater_staff)
-    fireEvent.change(roleSelect, { target: { value: 'tabwater_staff' } })
+    // 2. Logout and login as Field Reader (tabwater_staff)
+    fireEvent.click(screen.getByRole('button', { name: /ออกจากระบบ/i }))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /4. การเงิน & รับชำระ/i })).not.toBeInTheDocument()
+      expect(screen.getByLabelText('ชื่อผู้ใช้')).toBeInTheDocument()
     })
+    await signInAs('somchai_staff')
+    expect(screen.getByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /4. การเงิน & รับชำระ/i })).not.toBeInTheDocument()
 
-    // Switch role to Finance Staff (finance_staff)
-    fireEvent.change(roleSelect, { target: { value: 'finance_staff' } })
+    // 3. Logout and login as Finance Staff (finance_staff)
+    fireEvent.click(screen.getByRole('button', { name: /ออกจากระบบ/i }))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /4. การเงิน & รับชำระ/i })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
+      expect(screen.getByLabelText('ชื่อผู้ใช้')).toBeInTheDocument()
     })
+    await signInAs('finance_naree')
+    expect(screen.getByRole('button', { name: /4. การเงิน & รับชำระ/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
 
-    // Switch role to Citizen Resident (user)
-    fireEvent.change(roleSelect, { target: { value: 'user' } })
+    // 4. Logout and login as Citizen Resident (user)
+    fireEvent.click(screen.getByRole('button', { name: /ออกจากระบบ/i }))
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /5. LINE LIFF ลูกบ้าน/i })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: /4. การเงิน & รับชำระ/i })).not.toBeInTheDocument()
+      expect(screen.getByLabelText('ชื่อผู้ใช้')).toBeInTheDocument()
     })
+    await signInAs('resident_sommai')
+    expect(screen.getByRole('button', { name: /5. LINE LIFF ลูกบ้าน/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /1. ข้อมูล อบต./i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /3. จดมิเตอร์ & ออกบิล Bluetooth/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /4. การเงิน & รับชำระ/i })).not.toBeInTheDocument()
   })
 })

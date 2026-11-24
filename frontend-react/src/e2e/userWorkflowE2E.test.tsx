@@ -1,12 +1,35 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { App } from '@/app/App'
 
+async function signInAs(username: string, password = 'water1234') {
+  fireEvent.change(screen.getByLabelText('ชื่อผู้ใช้'), { target: { value: username } })
+  fireEvent.change(screen.getByLabelText('รหัสผ่าน'), { target: { value: password } })
+  fireEvent.click(screen.getByRole('button', { name: /เข้าสู่ระบบ/i }))
+  await waitFor(() => {
+    expect(screen.getByLabelText('Left Sidebar')).toBeInTheDocument()
+  })
+}
+
 describe('End-to-End User Journeys: 5 Vertical Slices Integration', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new TypeError('Offline fallback for E2E unit test'))
+    )
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    sessionStorage.clear()
+  })
+
   it('walks through entire municipal workflow: Master Data -> Meter -> Field Read -> Cashier Pay -> LINE LIFF', async () => {
     render(<App />)
+    await signInAs('admin_hsg')
 
-    // Step 1: Master Data screen is visible by default
+    // Step 1: Master Data screen is visible by default for admin
     expect(screen.getByText(/Water Smart Bill/i)).toBeInTheDocument()
     expect(screen.getByText(/1. ข้อมูล อบต. \/ หมู่บ้าน \/ เจ้าของบ้าน/i)).toBeInTheDocument()
 
@@ -42,6 +65,7 @@ describe('End-to-End User Journeys: 5 Vertical Slices Integration', () => {
 
   it('handles Cashier payment modal and calculates cash change accurately in E2E flow', async () => {
     render(<App />)
+    await signInAs('finance_naree')
 
     // Navigate to Cashier tab
     fireEvent.click(screen.getByRole('button', { name: /4. การเงิน & รับชำระ/i }))
