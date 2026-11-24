@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,27 +41,6 @@ func (s *Store) Close() {
 	if s.db != nil {
 		s.db.Close()
 	}
-}
-
-func (s *Store) runMigrations(ctx context.Context, dir string) error {
-	files := []string{
-		"000001_water_smart_bill_schema.up.sql",
-		"000002_enable_rls.up.sql",
-	}
-	for _, f := range files {
-		p := filepath.Join(dir, f)
-		sqlBytes, err := os.ReadFile(p)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return err
-		}
-		if _, err := s.db.Exec(ctx, string(sqlBytes)); err != nil {
-			return fmt.Errorf("exec %s: %w", f, err)
-		}
-	}
-	return nil
 }
 
 func (s *Store) GetOrganization(ctx context.Context, orgID *int64) (application.Organization, error) {

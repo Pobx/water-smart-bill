@@ -22,6 +22,27 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot job: guarantees the Keycloak database exists even when the postgres volume
+  # was created earlier (init scripts only run on an EMPTY data volume).
+  db-init:
+    image: postgres:16-alpine
+    container_name: water-db-init
+    restart: "no"
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-water_dev_password}
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        KC_DB="${KEYCLOAK_DB:-keycloak}"
+        if psql -h postgres -U "${POSTGRES_USER:-water}" -d "${POSTGRES_DB:-water_smart_bill}" -tAc "SELECT 1 FROM pg_database WHERE datname='$$KC_DB'" | grep -q 1; then
+          echo "database $$KC_DB already exists"
+        else
+          psql -h postgres -U "${POSTGRES_USER:-water}" -d "${POSTGRES_DB:-water_smart_bill}" -c "CREATE DATABASE $$KC_DB"
+        fi
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   redis:
     image: redis:7-alpine
     container_name: water-redis
@@ -58,6 +79,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
   backend:
     build:
