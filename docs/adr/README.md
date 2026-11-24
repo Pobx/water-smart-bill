@@ -11,9 +11,11 @@
 | [0003](0003-offline-first-sync-bluetooth-escpos-and-hybrid-ocr.md) | ระบบ Offline-First Sync, เครื่องพิมพ์ใบเสร็จ Bluetooth (ESC/POS) และ Hybrid OCR อ่านเลขมิเตอร์ | 2026-11-18 | **Accepted** |
 | [0004](0004-keycloak-oidc-redis-jwt-blacklist-and-tailwind-theme.md) | ระบบยืนยันตัวตน Keycloak OIDC, Redis JWT Blacklist เมื่อ Logout และ Custom Tailwind CSS Login Theme | 2026-11-18 | **Accepted** |
 | [0005](0005-frontend-vertical-slice-and-backend-hexagonal-architecture.md) | โครงสร้าง Frontend แบบ Vertical Slice Architecture (`piliar.me`) และ Backend แบบ Hexagonal Architecture (`vinisantos.dev`) | 2026-11-18 | **Accepted** |
-| [0006](0006-finance-cashier-invoicing-receipts-and-csv-export.md) | ระบบรับชำระเงินค่าน้ำที่สำนักงาน อบต. ออกใบเสร็จรับเงิน และส่งออกรายงานการจัดเก็บ (CSV Export) | 2026-11-18 | **Accepted** |
+| [0006](0006-finance-cashier-invoicing-receipts-and-csv-export.md) | ระบบรับชำระเงินค่าน้ำที่สำนักงาน อบต. ออกใบเสร็จรับเงิน และส่งออกรายงานการจัดเก็บ (CSV Export) | 2026-11-18 | **Accepted (Updated by [0009](0009-rbac-left-menu-mobile-card-views-and-cash-only-policy.md))** |
 | [0007](0007-hyperframes-and-elevenlabs-thai-video-tutorial.md) | การสร้างวิดีโอสอนใช้งานระบบอัตโนมัติด้วย HeyGen HyperFrames และพากย์เสียงภาษาไทยด้วย ElevenLabs TTS | 2026-11-18 | **Accepted** |
 | [0008](0008-integrate-claude-bughunter-security-framework.md) | การผสานรวม Claude-BugHunter Security Framework เข้ากับวงจรการพัฒนา Superpowers | 2026-11-18 | **Accepted** |
+| [0009](0009-rbac-left-menu-mobile-card-views-and-cash-only-policy.md) | ระบบควบคุมสิทธิ์รายบทบาท (RBAC Middleware & Left Menu), Mobile Card Views และนโยบายรับชำระด้วยเงินสดเท่านั้น (Cash-Only Policy) | 2026-11-24 | **Accepted** |
+| [0010](0010-golden-master-testing-auto-migrations-and-docker-automation.md) | ระบบทดสอบ Golden Master Suite, Auto-Migration Runner ด้วย Checksum และสคริปต์ Docker ข้ามแพลตฟอร์ม | 2026-11-24 | **Accepted** |
 
 ---
 
