@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -271,4 +272,88 @@ func TestRequireRolesRBAC(t *testing.T) {
 		t.Fatalf("expected 200 OK for admin calling rate config, got %d: %s", recAdminRate.Code, recAdminRate.Body.String())
 	}
 }
+
+func TestUploadHomeownerAvatarSecurityValidation(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	bl := blacklist.NewStore("")
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    bl,
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// 1. Reject dangerous file upload (.html / .svg with script) -> 400 Bad Request
+	var badBuf bytes.Buffer
+	mwBad := multipart.NewWriter(&badBuf)
+	fwBad, _ := mwBad.CreateFormFile("avatar", "exploit.html")
+	_, _ = fwBad.Write([]byte("<script>alert(1)</script>"))
+	_ = mwBad.Close()
+
+	reqBadFile := httptest.NewRequest(http.MethodPost, "/api/v1/users/1/avatar", &badBuf)
+	reqBadFile.Header.Set("Authorization", "Bearer valid-admin-token")
+	reqBadFile.Header.Set("Content-Type", mwBad.FormDataContentType())
+	recBadFile := httptest.NewRecorder()
+	srv.ServeHTTP(recBadFile, reqBadFile)
+	if recBadFile.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for .html avatar upload, got %d: %s", recBadFile.Code, recBadFile.Body.String())
+	}
+
+	// 2. Reject spoofed extension (.png with HTML payload) -> 400 Bad Request
+	var spoofBuf bytes.Buffer
+	mwSpoof := multipart.NewWriter(&spoofBuf)
+	fwSpoof, _ := mwSpoof.CreateFormFile("avatar", "spoof.png")
+	_, _ = fwSpoof.Write([]byte("<html><script>alert(1)</script></html>"))
+	_ = mwSpoof.Close()
+
+	reqSpoof := httptest.NewRequest(http.MethodPost, "/api/v1/users/1/avatar", &spoofBuf)
+	reqSpoof.Header.Set("Authorization", "Bearer valid-admin-token")
+	reqSpoof.Header.Set("Content-Type", mwSpoof.FormDataContentType())
+	recSpoof := httptest.NewRecorder()
+	srv.ServeHTTP(recSpoof, reqSpoof)
+	if recSpoof.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for spoofed MIME .png upload, got %d: %s", recSpoof.Code, recSpoof.Body.String())
+	}
+
+	// 3. Reject dangerous javascript: URI in JSON avatar_url -> 400 Bad Request
+	xssBody, _ := json.Marshal(map[string]string{"avatar_url": "javascript:alert(document.cookie)"})
+	reqXSS := httptest.NewRequest(http.MethodPost, "/api/v1/users/1/avatar", bytes.NewReader(xssBody))
+	reqXSS.Header.Set("Authorization", "Bearer valid-admin-token")
+	reqXSS.Header.Set("Content-Type", "application/json")
+	recXSS := httptest.NewRecorder()
+	srv.ServeHTTP(recXSS, reqXSS)
+	if recXSS.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for javascript: avatar_url, got %d: %s", recXSS.Code, recXSS.Body.String())
+	}
+
+	// 4. Accept valid PNG binary upload -> 200 OK
+	validPNG := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+		0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+		0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+		0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+		0x42, 0x60, 0x82,
+	}
+	var pngBuf bytes.Buffer
+	mwPNG := multipart.NewWriter(&pngBuf)
+	fwPNG, _ := mwPNG.CreateFormFile("avatar", "avatar.png")
+	_, _ = fwPNG.Write(validPNG)
+	_ = mwPNG.Close()
+
+	reqPNG := httptest.NewRequest(http.MethodPost, "/api/v1/users/1/avatar", &pngBuf)
+	reqPNG.Header.Set("Authorization", "Bearer valid-admin-token")
+	reqPNG.Header.Set("Content-Type", mwPNG.FormDataContentType())
+	recPNG := httptest.NewRecorder()
+	srv.ServeHTTP(recPNG, reqPNG)
+	if recPNG.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for valid PNG upload, got %d: %s", recPNG.Code, recPNG.Body.String())
+	}
+}
+
 

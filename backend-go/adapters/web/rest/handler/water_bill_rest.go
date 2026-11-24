@@ -215,6 +215,35 @@ func (h *WaterBillRestHandler) CreateHomeowner(c echo.Context) error {
 	return c.JSON(http.StatusCreated, u)
 }
 
+const maxAvatarUploadBytes = 5 * 1024 * 1024
+
+var allowedAvatarExtensions = map[string]bool{
+	".png":  true,
+	".jpg":  true,
+	".jpeg": true,
+	".webp": true,
+}
+
+var allowedAvatarMIMEs = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/webp": true,
+}
+
+func isSafeAvatarURL(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	return strings.HasPrefix(lower, "/") ||
+		strings.HasPrefix(lower, "http://") ||
+		strings.HasPrefix(lower, "https://") ||
+		strings.HasPrefix(lower, "data:image/png;base64,") ||
+		strings.HasPrefix(lower, "data:image/jpeg;base64,") ||
+		strings.HasPrefix(lower, "data:image/webp;base64,")
+}
+
 func (h *WaterBillRestHandler) UploadHomeownerAvatar(c echo.Context) error {
 	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || userID <= 0 {
@@ -224,23 +253,31 @@ func (h *WaterBillRestHandler) UploadHomeownerAvatar(c echo.Context) error {
 	var avatarURL string
 	fileHeader, fileErr := c.FormFile("avatar")
 	if fileErr == nil && fileHeader != nil {
+		if fileHeader.Size <= 0 || fileHeader.Size > maxAvatarUploadBytes {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "avatar file size must be between 1B and 5MB")
+		}
+		ext := strings.ToLower(filepath.Ext(filepath.Base(fileHeader.Filename)))
+		if !allowedAvatarExtensions[ext] {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "unsupported avatar file extension (allowed: .png, .jpg, .jpeg, .webp)")
+		}
 		src, err := fileHeader.Open()
 		if err != nil {
 			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "cannot read uploaded file")
 		}
 		defer src.Close()
-		ext := filepath.Ext(fileHeader.Filename)
-		if ext == "" {
-			ext = ".png"
+
+		data, err := io.ReadAll(io.LimitReader(src, maxAvatarUploadBytes+1))
+		if err != nil || len(data) == 0 || len(data) > maxAvatarUploadBytes {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid avatar file payload")
 		}
+		detectedMIME := http.DetectContentType(data)
+		if !allowedAvatarMIMEs[detectedMIME] {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid image MIME content type")
+		}
+
 		filename := fmt.Sprintf("user-%d-%d%s", userID, time.Now().UnixMilli(), ext)
 		destPath := filepath.Join(h.UploadDir, "avatars", filename)
-		dst, err := os.Create(destPath)
-		if err != nil {
-			return WriteProblem(c, http.StatusInternalServerError, "Storage Error", err.Error())
-		}
-		defer dst.Close()
-		if _, err := io.Copy(dst, src); err != nil {
+		if err := os.WriteFile(destPath, data, 0o644); err != nil {
 			return WriteProblem(c, http.StatusInternalServerError, "Storage Error", err.Error())
 		}
 		avatarURL = "/uploads/avatars/" + filename
@@ -249,7 +286,10 @@ func (h *WaterBillRestHandler) UploadHomeownerAvatar(c echo.Context) error {
 			AvatarURL string `json:"avatar_url"`
 		}
 		_ = c.Bind(&body)
-		avatarURL = body.AvatarURL
+		if !isSafeAvatarURL(body.AvatarURL) {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid or unsafe avatar_url scheme")
+		}
+		avatarURL = strings.TrimSpace(body.AvatarURL)
 	}
 
 	updated, err := h.Service.UpdateHomeownerAvatar(c.Request().Context(), GetClaims(c), userID, avatarURL)
