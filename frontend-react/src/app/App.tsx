@@ -5,6 +5,7 @@ import { TariffsMetersScreen, useTariffsMeters } from '@/features/tariffs-meters
 import { FieldReaderScreen, useFieldReader } from '@/features/field-reader'
 import { LiffPortalScreen, useLiffPortal } from '@/features/liff-portal'
 import { FinanceCashierScreen } from '@/features/finance-cashier'
+import { SearchableSelect } from '@/shared/ui'
 
 export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff'
 
@@ -171,18 +172,16 @@ export function App() {
             </div>
             {assignedRoleOptions.length > 1 ? (
               <div className="mt-2">
-                <select
-                  aria-label="เลือกบทบาท (Role)"
+                <SearchableSelect
+                  ariaLabel="เลือกบทบาท (Role)"
+                  size="sm"
+                  options={assignedRoleOptions.map((opt) => ({
+                    value: opt.id,
+                    label: `${opt.icon} ${opt.name}`,
+                  }))}
                   value={auth.currentRole}
-                  onChange={(e) => auth.setCurrentRole(e.target.value as UserRole)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-800 shadow-2xs focus:border-sky-500 focus:outline-hidden focus:ring-1 focus:ring-sky-500"
-                >
-                  {assignedRoleOptions.map((opt) => (
-                    <option key={opt.id} value={opt.id}>
-                      {opt.icon} {opt.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => auth.setCurrentRole(val as UserRole)}
+                />
               </div>
             ) : (
               <div className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800">

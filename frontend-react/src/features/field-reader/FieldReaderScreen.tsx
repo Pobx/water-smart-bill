@@ -1,4 +1,5 @@
 import { formatThermalReceiptText, printViaWebBluetooth } from '@/features/printer/escpos'
+import { NumericInput, SearchableSelect } from '@/shared/ui'
 import type { WaterMeterItem } from '@/shared/types/waterSmartBill'
 import type { useFieldReader } from './useFieldReader'
 
@@ -224,43 +225,39 @@ export function FieldReaderScreen({
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">เลือกมิเตอร์น้ำ / บ้านเลขที่</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                <SearchableSelect
+                  ariaLabel="เลือกมิเตอร์น้ำ / บ้านเลขที่"
+                  options={meters.map((m) => ({
+                    value: m.meter_id,
+                    label: `${m.meternumber} — บ้าน ${m.house_no} (${m.homeowner_name})`,
+                  }))}
                   value={selectedMeterId}
-                  onChange={(e) => setSelectedMeterId(Number(e.target.value))}
-                >
-                  {meters.map((m) => (
-                    <option key={m.meter_id} value={m.meter_id}>
-                      {m.meternumber} — บ้าน {m.house_no} ({m.homeowner_name})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedMeterId(val)}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">ประจำงวดบิล</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                <SearchableSelect
+                  ariaLabel="ประจำงวดบิล"
+                  options={periods.map((p) => ({
+                    value: p,
+                    label: p,
+                  }))}
                   value={selectedPeriod}
-                  onChange={(e) => setSelectedPeriod(e.target.value)}
-                >
-                  {periods.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedPeriod(val)}
+                />
               </div>
               <div>
                 <label htmlFor="current-reading-input" className="mb-1 block text-xs font-medium text-slate-600">
                   เลขมิเตอร์ครั้งนี้
                 </label>
-                <input
+                <NumericInput
                   id="current-reading-input"
                   aria-label="เลขมิเตอร์ครั้งนี้"
-                  type="number"
                   className="w-full rounded-lg border border-sky-300 bg-white px-3 py-2 font-mono text-base font-bold text-slate-900"
                   value={currentReadingStr}
-                  onChange={(e) => setCurrentReadingStr(e.target.value)}
+                  decimalScale={2}
+                  onValueChange={(raw) => setCurrentReadingStr(raw)}
                 />
               </div>
             </div>

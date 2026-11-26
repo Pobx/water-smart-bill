@@ -21,7 +21,7 @@
       "id": "TC-01",
       "title": "Login Gate & Invalid Credentials Alert",
       "status": "PASS",
-      "duration_s": 1.53,
+      "duration_s": 2.43,
       "details": {
         "screenshot": "01_login_gate_and_error.png"
       }
@@ -30,7 +30,7 @@
       "id": "TC-02",
       "title": "Demo Quick-Fill & Admin RBAC Login",
       "status": "PASS",
-      "duration_s": 0.47,
+      "duration_s": 0.84,
       "details": {
         "screenshot": "02_admin_dashboard_master_data.png"
       }
@@ -39,7 +39,7 @@
       "id": "TC-03",
       "title": "Master Data: Org, Village Zone, Homeowner Default & Uploaded Avatar",
       "status": "PASS",
-      "duration_s": 1.06,
+      "duration_s": 1.34,
       "details": {
         "screenshot": "03_master_data_zones_homeowners.png"
       }
@@ -48,7 +48,7 @@
       "id": "TC-04",
       "title": "Tariffs & Meters: Progressive Tiers, Period & Meter Registration",
       "status": "PASS",
-      "duration_s": 0.68,
+      "duration_s": 0.86,
       "details": {
         "screenshot": "04_tariffs_and_meters.png"
       }
@@ -57,7 +57,7 @@
       "id": "TC-05",
       "title": "Field Reader: Live Camera Viewfinder (getUserMedia) + Canvas Capture OCR",
       "status": "PASS",
-      "duration_s": 1.7,
+      "duration_s": 1.93,
       "details": {
         "video_stream": {
           "width": 1280,
@@ -74,16 +74,16 @@
       "id": "TC-06",
       "title": "Field Reader: Photo Upload OCR, SVG Block & Low-Reading Warning",
       "status": "PASS",
-      "duration_s": 0.26,
+      "duration_s": 0.29,
       "details": {
         "screenshot": "06_field_reader_photo_upload_ocr.png"
       }
     },
     {
       "id": "TC-07",
-      "title": "Field Reader: Bluetooth ESC/POS Printing & Offline-First Sync",
+      "title": "Field Reader: NumericInput Format, Bluetooth ESC/POS & Offline Sync",
       "status": "PASS",
-      "duration_s": 0.85,
+      "duration_s": 1.46,
       "details": {
         "screenshots": [
           "07a_bluetooth_escpos_receipt_modal.png",
@@ -93,9 +93,9 @@
     },
     {
       "id": "TC-08",
-      "title": "Finance & Cashier Desk: Filter, Search, Payment, Change, Receipt & CSV",
+      "title": "Finance & Cashier Desk: Formatted Cash, Change, Receipt & CSV",
       "status": "PASS",
-      "duration_s": 2.15,
+      "duration_s": 2.79,
       "details": {
         "csv_filename": "รายงานจัดเก็บค่าน้ำ-2026-11-26.csv",
         "screenshots": [
@@ -106,9 +106,9 @@
     },
     {
       "id": "TC-09",
-      "title": "LINE LIFF Resident Portal: Meter Switch & Bill History",
+      "title": "LINE LIFF Resident Portal: SearchableSelect & Bill History",
       "status": "PASS",
-      "duration_s": 0.38,
+      "duration_s": 0.69,
       "details": {
         "screenshot": "09_line_liff_resident_portal.png"
       }
@@ -117,7 +117,7 @@
       "id": "TC-10",
       "title": "RBAC Isolation & Logout Across All 4 Roles",
       "status": "PASS",
-      "duration_s": 1.21,
+      "duration_s": 1.26,
       "details": {
         "screenshot": "10_rbac_resident_isolated_view.png"
       }
@@ -126,7 +126,7 @@
       "id": "TC-11",
       "title": "Mobile Responsive Drawer & Field Reader Camera OCR (390x844)",
       "status": "PASS",
-      "duration_s": 2.02,
+      "duration_s": 2.48,
       "details": {
         "screenshot": "11_mobile_camera_ocr_view.png"
       }

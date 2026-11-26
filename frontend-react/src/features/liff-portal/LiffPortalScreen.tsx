@@ -1,3 +1,4 @@
+import { SearchableSelect } from '@/shared/ui'
 import type { WaterMeterItem } from '@/shared/types/waterSmartBill'
 import type { useLiffPortal } from './useLiffPortal'
 
@@ -16,25 +17,25 @@ export function LiffPortalScreen({
 }: LiffPortalScreenProps) {
   return (
     <div className="mx-auto max-w-lg rounded-3xl border border-emerald-200 bg-white p-6 shadow-md">
-      <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-4">
+      <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
         <div>
           <span className="inline-block rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
             LINE LIFF • ระบบเช็คค่าน้ำประปาสำหรับเจ้าของบ้าน
           </span>
           <h2 className="mt-1 text-base font-bold text-slate-900">{orgName}</h2>
         </div>
-        <select
-          aria-label="เลือกมิเตอร์ลูกบ้าน"
-          className="rounded-lg border border-slate-200 px-2.5 py-1.5 font-mono text-xs font-semibold"
-          value={liffSelectedMeterNo}
-          onChange={(e) => setLiffSelectedMeterNo(e.target.value)}
-        >
-          {meters.map((m) => (
-            <option key={m.meter_id} value={m.meternumber}>
-              {m.meternumber} ({m.house_no})
-            </option>
-          ))}
-        </select>
+        <div className="w-48 shrink-0">
+          <SearchableSelect
+            ariaLabel="เลือกมิเตอร์ลูกบ้าน"
+            size="sm"
+            options={meters.map((m) => ({
+              value: m.meternumber,
+              label: `${m.meternumber} (${m.house_no})`,
+            }))}
+            value={liffSelectedMeterNo}
+            onChange={(val) => setLiffSelectedMeterNo(val)}
+          />
+        </div>
       </div>
 
       {liffMeter && (

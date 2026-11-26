@@ -1,5 +1,12 @@
 import { resolveAvatarUrl } from '@/features/billing/utils/waterBillCalculator'
+import { SearchableSelect } from '@/shared/ui'
 import type { useMasterData } from './useMasterData'
+
+const PREFIX_OPTIONS = [
+  { value: 'นาย', label: 'นาย' },
+  { value: 'นาง', label: 'นาง' },
+  { value: 'นางสาว', label: 'นางสาว' },
+]
 
 export type MasterDataScreenProps = ReturnType<typeof useMasterData>
 
@@ -141,15 +148,12 @@ export function MasterDataScreen({
           <form onSubmit={handleAddHomeowner} className="grid gap-3 sm:grid-cols-3">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">คำนำหน้า</label>
-              <select
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              <SearchableSelect
+                ariaLabel="คำนำหน้า"
+                options={PREFIX_OPTIONS}
                 value={prefix}
-                onChange={(e) => setPrefix(e.target.value)}
-              >
-                <option value="นาย">นาย</option>
-                <option value="นาง">นาง</option>
-                <option value="นางสาว">นางสาว</option>
-              </select>
+                onChange={(val) => setPrefix(val)}
+              />
             </div>
             <div>
               <label htmlFor="owner-firstname" className="mb-1 block text-xs font-medium text-slate-600">
@@ -192,17 +196,15 @@ export function MasterDataScreen({
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">หมู่บ้าน</label>
-              <select
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              <SearchableSelect
+                ariaLabel="หมู่บ้าน"
+                options={zones.map((z) => ({
+                  value: z.id,
+                  label: z.zone_name,
+                }))}
                 value={selectedZoneId}
-                onChange={(e) => setSelectedZoneId(Number(e.target.value))}
-              >
-                {zones.map((z) => (
-                  <option key={z.id} value={z.id}>
-                    {z.zone_name}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setSelectedZoneId(val)}
+              />
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">เบอร์โทรศัพท์</label>

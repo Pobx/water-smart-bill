@@ -1,4 +1,5 @@
 import { useFinanceCashier } from './useFinanceCashier'
+import { NumericInput } from '@/shared/ui'
 import type { WaterInvoiceItem } from '@/shared/types/waterSmartBill'
 
 export interface FinanceCashierScreenProps {
@@ -426,11 +427,11 @@ export function FinanceCashierScreen({ token, invoices, onInvoicePaid }: Finance
                 <label className="text-xs font-semibold text-emerald-900">
                   จำนวนเงินที่รับจากผู้ใช้น้ำ (บาท)
                 </label>
-                <input
-                  type="number"
-                  step="any"
+                <NumericInput
+                  aria-label="จำนวนเงินที่รับจากผู้ใช้น้ำ"
                   value={cashTendered}
-                  onChange={(e) => setCashTendered(e.target.value)}
+                  onValueChange={(raw) => setCashTendered(raw)}
+                  decimalScale={2}
                   className="w-full px-3 py-2 text-lg font-bold border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                   placeholder="0.00"
                 />
