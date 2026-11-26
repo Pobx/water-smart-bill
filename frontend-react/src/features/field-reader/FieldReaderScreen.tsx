@@ -29,6 +29,16 @@ export function FieldReaderScreen({
   activeMeter,
   liveBreakdown,
   pendingSyncCount,
+  isCameraOpen,
+  cameraError,
+  capturedPhotoUrl,
+  videoRef,
+  canvasRef,
+  handleOpenCamera,
+  handleCloseCamera,
+  handleCaptureFromCamera,
+  handleUploadMeterPhoto,
+  handleClearCapturedPhoto,
   handleRunOcrScan,
   handleRecordReadingAndOpenBluetooth,
   handleSyncOfflineQueue,
@@ -63,17 +73,139 @@ export function FieldReaderScreen({
                   Optional AI / Hybrid OCR Meter Scanner
                 </div>
                 <p className="text-xs text-slate-600">
-                  ถ่ายรูปหน้าปัดมิเตอร์น้ำเพื่ออ่านค่าหน่วยมิเตอร์อัตโนมัติ (ตรวจสอบและแก้ไขได้เสมอ)
+                  เปิดกล้องถ่ายรูปหน้าปัดมิเตอร์น้ำหรืออัปโหลดรูปเพื่ออ่านค่าหน่วยมิเตอร์อัตโนมัติ (ตรวจสอบและแก้ไขได้เสมอ)
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={handleRunOcrScan}
-                className="rounded-lg bg-sky-600 px-3.5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-sky-700"
-              >
-                📷 AI OCR อ่านเลขมิเตอร์จากรูป
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {!isCameraOpen ? (
+                  <button
+                    key="open-camera-btn"
+                    type="button"
+                    onClick={() => {
+                      void handleOpenCamera()
+                    }}
+                    className="rounded-lg bg-sky-600 px-3.5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-sky-700"
+                  >
+                    📷 เปิดกล้องสแกนมิเตอร์ (Camera OCR)
+                  </button>
+                ) : (
+                  <button
+                    key="close-camera-btn"
+                    type="button"
+                    onClick={handleCloseCamera}
+                    className="rounded-lg bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-rose-700"
+                  >
+                    ✖️ ปิดกล้อง
+                  </button>
+                )}
+
+                <label className="cursor-pointer rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-700 shadow-2xs hover:bg-sky-50">
+                  📁 อัปโหลดรูป / กล้องมือถือ
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="environment"
+                    aria-label="อัปโหลดรูปหน้าปัดมิเตอร์"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) {
+                        handleUploadMeterPhoto(file)
+                        e.target.value = ''
+                      }
+                    }}
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleRunOcrScan}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50"
+                >
+                  ✨ AI OCR อ่านเลขมิเตอร์จากรูป
+                </button>
+              </div>
             </div>
+
+            {cameraError && (
+              <div
+                role="alert"
+                className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700"
+              >
+                ⚠️ {cameraError}
+              </div>
+            )}
+
+            {/* Live Camera Viewfinder */}
+            {isCameraOpen && (
+              <div className="mt-3 overflow-hidden rounded-xl border border-sky-300 bg-slate-950">
+                <div className="relative aspect-video w-full overflow-hidden">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    aria-label="กล้องสแกนมิเตอร์น้ำ"
+                    className="h-full w-full object-cover"
+                  />
+                  {/* Aiming Reticle Overlay */}
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <div className="h-20 w-64 rounded-lg border-2 border-dashed border-sky-400 bg-sky-500/10 shadow-inner" />
+                    <span className="mt-2 rounded-full bg-slate-900/75 px-3 py-0.5 text-[11px] font-medium text-white">
+                      วางตัวเลขหน้าปัดมิเตอร์ให้อยู่ในกรอบ
+                    </span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 bg-slate-900 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="text-[11px] text-slate-300">
+                    กล้องพร้อมใช้งาน • กดถ่ายภาพเพื่อสแกนตัวเลข OCR
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCaptureFromCamera}
+                      className="whitespace-nowrap rounded-lg bg-emerald-500 px-4 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-emerald-600"
+                    >
+                      📸 ถ่ายภาพและอ่านเลข OCR
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCloseCamera}
+                      className="whitespace-nowrap rounded-lg bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-600"
+                    >
+                      ยกเลิก
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <canvas ref={canvasRef} className="hidden" />
+
+            {/* Captured / Uploaded Photo Thumbnail Preview */}
+            {capturedPhotoUrl && (
+              <div className="mt-3 flex items-center gap-3 rounded-lg border border-sky-200 bg-white p-2.5">
+                <img
+                  src={capturedPhotoUrl}
+                  alt="ภาพหน้าปัดมิเตอร์ที่ถ่าย"
+                  className="h-16 w-24 rounded-md border border-slate-200 object-cover"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold text-slate-800">ภาพหน้าปัดมิเตอร์พร้อมแนบบิล</div>
+                  <div className="text-[11px] text-emerald-700">
+                    ✓ แนบเป็นหลักฐานการจดมิเตอร์อัตโนมัติ (reading_photo_url)
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearCapturedPhoto}
+                  className="rounded-md border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  ลบรูป
+                </button>
+              </div>
+            )}
+
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <input
                 aria-label="OCR Image Text Hint"

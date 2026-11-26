@@ -1,0 +1,135 @@
+{
+  "base_url": "http://127.0.0.1:5173",
+  "total": 11,
+  "passed": 11,
+  "failed": 0,
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED",
+    "Failed to load resource: net::ERR_CONNECTION_REFUSED"
+  ],
+  "page_errors": [],
+  "videos": [
+    "e2e_desktop_full_walkthrough.webm",
+    "e2e_mobile_camera_ocr.webm"
+  ],
+  "results": [
+    {
+      "id": "TC-01",
+      "title": "Login Gate & Invalid Credentials Alert",
+      "status": "PASS",
+      "duration_s": 1.53,
+      "details": {
+        "screenshot": "01_login_gate_and_error.png"
+      }
+    },
+    {
+      "id": "TC-02",
+      "title": "Demo Quick-Fill & Admin RBAC Login",
+      "status": "PASS",
+      "duration_s": 0.47,
+      "details": {
+        "screenshot": "02_admin_dashboard_master_data.png"
+      }
+    },
+    {
+      "id": "TC-03",
+      "title": "Master Data: Org, Village Zone, Homeowner Default & Uploaded Avatar",
+      "status": "PASS",
+      "duration_s": 1.06,
+      "details": {
+        "screenshot": "03_master_data_zones_homeowners.png"
+      }
+    },
+    {
+      "id": "TC-04",
+      "title": "Tariffs & Meters: Progressive Tiers, Period & Meter Registration",
+      "status": "PASS",
+      "duration_s": 0.68,
+      "details": {
+        "screenshot": "04_tariffs_and_meters.png"
+      }
+    },
+    {
+      "id": "TC-05",
+      "title": "Field Reader: Live Camera Viewfinder (getUserMedia) + Canvas Capture OCR",
+      "status": "PASS",
+      "duration_s": 1.7,
+      "details": {
+        "video_stream": {
+          "width": 1280,
+          "height": 720,
+          "readyState": 4
+        },
+        "screenshots": [
+          "05a_camera_ocr_live_viewfinder.png",
+          "05b_camera_ocr_captured_result.png"
+        ]
+      }
+    },
+    {
+      "id": "TC-06",
+      "title": "Field Reader: Photo Upload OCR, SVG Block & Low-Reading Warning",
+      "status": "PASS",
+      "duration_s": 0.26,
+      "details": {
+        "screenshot": "06_field_reader_photo_upload_ocr.png"
+      }
+    },
+    {
+      "id": "TC-07",
+      "title": "Field Reader: Bluetooth ESC/POS Printing & Offline-First Sync",
+      "status": "PASS",
+      "duration_s": 0.85,
+      "details": {
+        "screenshots": [
+          "07a_bluetooth_escpos_receipt_modal.png",
+          "07b_offline_queue_synced.png"
+        ]
+      }
+    },
+    {
+      "id": "TC-08",
+      "title": "Finance & Cashier Desk: Filter, Search, Payment, Change, Receipt & CSV",
+      "status": "PASS",
+      "duration_s": 2.15,
+      "details": {
+        "csv_filename": "รายงานจัดเก็บค่าน้ำ-2026-11-26.csv",
+        "screenshots": [
+          "08a_cashier_payment_modal.png",
+          "08b_cashier_official_receipt.png"
+        ]
+      }
+    },
+    {
+      "id": "TC-09",
+      "title": "LINE LIFF Resident Portal: Meter Switch & Bill History",
+      "status": "PASS",
+      "duration_s": 0.38,
+      "details": {
+        "screenshot": "09_line_liff_resident_portal.png"
+      }
+    },
+    {
+      "id": "TC-10",
+      "title": "RBAC Isolation & Logout Across All 4 Roles",
+      "status": "PASS",
+      "duration_s": 1.21,
+      "details": {
+        "screenshot": "10_rbac_resident_isolated_view.png"
+      }
+    },
+    {
+      "id": "TC-11",
+      "title": "Mobile Responsive Drawer & Field Reader Camera OCR (390x844)",
+      "status": "PASS",
+      "duration_s": 2.02,
+      "details": {
+        "screenshot": "11_mobile_camera_ocr_view.png"
+      }
+    }
+  ]
+}
