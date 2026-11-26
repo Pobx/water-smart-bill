@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   calculateProgressiveWaterBill,
   type RateTier,
@@ -10,7 +10,11 @@ import {
   type OfflineReadingRecord,
 } from '@/features/offline/offlineStore'
 import { type ThermalBillPayload } from '@/features/printer/escpos'
-import { extractMeterReadingFromHint } from '@/features/ocr/meterOcr'
+import {
+  analyzeMeterCanvasImage,
+  extractMeterReadingFromHint,
+  validateMeterImageFile,
+} from '@/features/ocr/meterOcr'
 import type { InvoiceItem, OrganizationInfo, WaterMeterItem } from '@/shared/types/waterSmartBill'
 
 export interface UseFieldReaderParams {
@@ -45,11 +49,169 @@ export function useFieldReader({
   const [activeThermalBill, setActiveThermalBill] = useState<ThermalBillPayload | null>(null)
   const [bluetoothPrintStatus, setBluetoothPrintStatus] = useState<string>('')
 
+  // Live Camera & Photo Capture State
+  const [isCameraOpen, setIsCameraOpen] = useState(false)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
   const activeMeter = meters.find((m) => m.meter_id === selectedMeterId) ?? meters[0]
   const currentReadingNum = Math.max(0, Number(currentReadingStr) || 0)
   const unitsUsed = Math.max(0, currentReadingNum - (activeMeter?.last_meter_recording ?? 0))
   const liveBreakdown = calculateProgressiveWaterBill(unitsUsed, tiers, reserveFee, orgInfo.vat)
   const pendingSyncCount = offlineQueue.filter((q) => q.sync_status === 'pending').length
+
+  function stopCameraStream() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+  }
+
+  // Attach MediaStream to <video> whenever camera opens
+  useEffect(() => {
+    if (isCameraOpen && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current
+      void videoRef.current.play().catch(() => {
+        // Autoplay may be suppressed in some headless environments
+      })
+    }
+  }, [isCameraOpen])
+
+  // Always release hardware camera on unmount
+  useEffect(() => {
+    return () => {
+      stopCameraStream()
+    }
+  }, [])
+
+  async function handleOpenCamera() {
+    setCameraError(null)
+
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== 'function'
+    ) {
+      setCameraError(
+        'เบราว์เซอร์หรือการเชื่อมต่อนี้ไม่รองรับการเปิดกล้องโดยตรง (ต้องใช้ HTTPS หรือ localhost) กรุณาใช้ปุ่มอัปโหลดรูปแทน',
+      )
+      return
+    }
+
+    try {
+      stopCameraStream()
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      })
+      streamRef.current = stream
+      setIsCameraOpen(true)
+    } catch (err) {
+      const name = err instanceof Error ? err.name : ''
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setCameraError('ไม่ได้รับอนุญาตให้เข้าถึงกล้อง กรุณาอนุญาตสิทธิ์กล้องในเบราว์เซอร์ หรือใช้วิธีอัปโหลดรูปภาพแทน')
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        setCameraError('ไม่พบอุปกรณ์กล้องบนเครื่องนี้ กรุณาใช้ปุ่มอัปโหลดรูปภาพแทน')
+      } else {
+        setCameraError('ไม่สามารถเปิดกล้องได้ในขณะนี้ กรุณาลองใหม่หรือใช้วิธีอัปโหลดรูปภาพแทน')
+      }
+      setIsCameraOpen(false)
+    }
+  }
+
+  function handleCloseCamera() {
+    stopCameraStream()
+    setIsCameraOpen(false)
+  }
+
+  function handleCaptureFromCamera() {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    const prev = activeMeter?.last_meter_recording ?? 0
+    let imageData: ImageData | null = null
+    let dataUrl = ''
+
+    if (canvas) {
+      const width = video && video.videoWidth > 0 ? video.videoWidth : 640
+      const height = video && video.videoHeight > 0 ? video.videoHeight : 360
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        if (video) {
+          ctx.drawImage(video, 0, 0, width, height)
+        }
+        try {
+          imageData = ctx.getImageData(0, 0, width, height)
+        } catch {
+          imageData = null
+        }
+      }
+      try {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+      } catch {
+        dataUrl = ''
+      }
+    }
+
+    if (dataUrl) {
+      setCapturedPhotoUrl(dataUrl)
+    }
+
+    const res = analyzeMeterCanvasImage(imageData, ocrHintInput, prev)
+    setCurrentReadingStr(String(res.reading))
+    setOcrConfidence(res.confidence)
+    setOcrStatusMsg(
+      res.warning
+        ? `⚠️ OCR จากกล้องอ่านได้ ${res.digits} (${res.warning})`
+        : `✅ ถ่ายภาพและอ่านเลข OCR สำเร็จ: ${res.digits} (ความมั่นใจ ${res.confidence}%)`,
+    )
+    setCameraError(null)
+    handleCloseCamera()
+  }
+
+  function handleUploadMeterPhoto(file: File) {
+    setCameraError(null)
+    const validation = validateMeterImageFile(file)
+    if (!validation.valid) {
+      setCameraError(validation.error ?? 'ไฟล์ภาพไม่ถูกต้อง')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      if (result) {
+        setCapturedPhotoUrl(result)
+      }
+    }
+    reader.readAsDataURL(file)
+
+    const prev = activeMeter?.last_meter_recording ?? 0
+    const hintSource = /\d+/.test(file.name) ? file.name : ocrHintInput
+    const res = extractMeterReadingFromHint(hintSource, prev)
+    setCurrentReadingStr(String(res.reading))
+    setOcrConfidence(res.confidence)
+    setOcrStatusMsg(
+      res.warning
+        ? `⚠️ OCR จากรูปภาพอ่านได้ ${res.digits} (${res.warning})`
+        : `✅ AI OCR อ่านเลขจากรูปภาพสำเร็จ: ${res.digits} (ความมั่นใจ ${res.confidence}%)`,
+    )
+  }
+
+  function handleClearCapturedPhoto() {
+    setCapturedPhotoUrl(null)
+  }
 
   function handleRunOcrScan() {
     const prev = activeMeter?.last_meter_recording ?? 0
@@ -84,7 +246,7 @@ export function useFieldReader({
       reserve_meter: liveBreakdown.reserve_fee,
       vat: liveBreakdown.vat_amount,
       totalpaid: liveBreakdown.total_payable,
-      reading_photo_url: '',
+      reading_photo_url: capturedPhotoUrl ?? '',
       ocr_text: String(currentReadingNum).padStart(5, '0'),
       ocr_confidence: ocrConfidence,
     })
@@ -108,7 +270,7 @@ export function useFieldReader({
       reserve_meter: liveBreakdown.reserve_fee,
       vat: liveBreakdown.vat_amount,
       totalpaid: liveBreakdown.total_payable,
-      reading_photo_url: '',
+      reading_photo_url: capturedPhotoUrl ?? '',
       ocr_text: queued.ocr_text,
       ocr_confidence: ocrConfidence,
       status: 'invoice',
@@ -169,6 +331,16 @@ export function useFieldReader({
     activeMeter,
     liveBreakdown,
     pendingSyncCount,
+    isCameraOpen,
+    cameraError,
+    capturedPhotoUrl,
+    videoRef,
+    canvasRef,
+    handleOpenCamera,
+    handleCloseCamera,
+    handleCaptureFromCamera,
+    handleUploadMeterPhoto,
+    handleClearCapturedPhoto,
     handleRunOcrScan,
     handleRecordReadingAndOpenBluetooth,
     handleSyncOfflineQueue,
