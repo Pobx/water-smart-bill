@@ -286,8 +286,28 @@ def run_suite():
 
         record_result("TC-06", "Field Reader: Photo Upload OCR, SVG Block & Low-Reading Warning", tc06)
 
-        # TC-07: Feature 3 — Record Meter Reading, Bluetooth ESC/POS Modal & Offline Sync
+        # TC-07: Feature 3 — NumericInput Formatting, Record Reading, Bluetooth ESC/POS Modal & Offline Sync
         def tc07():
+            # Verify NumericInput formatting rules: plain text input, 1,230, 0.10, 0, and block 01234 -> 1,234
+            reading_input = page.get_by_label("เลขมิเตอร์ครั้งนี้")
+            expect(reading_input).to_have_attribute("type", "text")
+            reading_input.fill("")
+            reading_input.type("1230")
+            expect(reading_input).to_have_value("1,230")
+            reading_input.fill("")
+            reading_input.type("0.10")
+            expect(reading_input).to_have_value("0.10")
+            reading_input.fill("")
+            reading_input.type("0")
+            expect(reading_input).to_have_value("0")
+            reading_input.fill("")
+            reading_input.type("01234")
+            expect(reading_input).to_have_value("1,234")
+            # Restore to 158 for normal billing calculation
+            reading_input.fill("")
+            reading_input.type("158")
+            expect(reading_input).to_have_value("158")
+
             page.get_by_role("button", name="บันทึกมิเตอร์ & พิมพ์บิล Bluetooth").click()
             dialog = page.get_by_role("dialog", name="Bluetooth ESC/POS Receipt")
             expect(dialog).to_be_visible()
@@ -312,7 +332,7 @@ def run_suite():
             page.screenshot(path=str(shot_sync), full_page=True)
             return {"screenshots": [shot_bt.name, shot_sync.name]}
 
-        record_result("TC-07", "Field Reader: Bluetooth ESC/POS Printing & Offline-First Sync", tc07)
+        record_result("TC-07", "Field Reader: NumericInput Format, Bluetooth ESC/POS & Offline Sync", tc07)
 
         # TC-08: Feature 4 — Finance & Cashier Desk (Filter, Search, Payment, Change, Receipt, CSV)
         def tc08():
@@ -330,12 +350,16 @@ def run_suite():
 
             # Test insufficient cash
             cash_input = page.get_by_placeholder("0.00")
-            cash_input.fill("10")
+            expect(cash_input).to_have_attribute("type", "text")
+            cash_input.fill("")
+            cash_input.type("10")
             expect(page.get_by_text("ยอดเงินไม่เพียงพอ")).to_be_visible()
             expect(page.get_by_role("button", name="ยืนยันรับชำระเงิน")).to_be_disabled()
 
-            # Test sufficient cash (500 THB)
-            cash_input.fill("500")
+            # Test 4-digit formatted cash (1,000 THB)
+            cash_input.fill("")
+            cash_input.type("1000")
+            expect(cash_input).to_have_value("1,000")
             expect(page.get_by_text("เงินทอน (Change):")).to_be_visible()
             expect(page.get_by_role("button", name="ยืนยันรับชำระเงิน")).to_be_enabled()
 
@@ -361,22 +385,25 @@ def run_suite():
                 "screenshots": [shot_pay.name, shot_rc.name],
             }
 
-        record_result("TC-08", "Finance & Cashier Desk: Filter, Search, Payment, Change, Receipt & CSV", tc08)
+        record_result("TC-08", "Finance & Cashier Desk: Formatted Cash, Change, Receipt & CSV", tc08)
 
-        # TC-09: Feature 5 — LINE LIFF Resident Portal
+        # TC-09: Feature 5 — LINE LIFF Resident Portal (with SearchableSelect)
         def tc09():
             page.get_by_role("button", name="5. LINE LIFF ลูกบ้าน").click()
             expect(page.get_by_text("LINE LIFF • ระบบเช็คค่าน้ำประปาสำหรับเจ้าของบ้าน")).to_be_visible()
-            select = page.get_by_label("เลือกมิเตอร์ลูกบ้าน")
-            expect(select).to_be_visible()
-            select.select_option(index=1)
+            combobox = page.get_by_role("combobox", name="เลือกมิเตอร์ลูกบ้าน")
+            expect(combobox).to_be_visible()
+            combobox.click()
+            combobox.fill("HSG-0002")
+            page.get_by_role("option", name="HSG-0002").click()
+            expect(page.get_by_text("นางมาลี ศรีสุข").first).to_be_visible()
             expect(page.get_by_text("ยอดรวมสุทธิ").first).to_be_visible()
 
             shot = SCREENSHOT_DIR / "09_line_liff_resident_portal.png"
             page.screenshot(path=str(shot), full_page=True)
             return {"screenshot": str(shot.name)}
 
-        record_result("TC-09", "LINE LIFF Resident Portal: Meter Switch & Bill History", tc09)
+        record_result("TC-09", "LINE LIFF Resident Portal: SearchableSelect & Bill History", tc09)
 
         # TC-10: RBAC Role Isolation Across All 4 Roles + Logout
         def tc10():

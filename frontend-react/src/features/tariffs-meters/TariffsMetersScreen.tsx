@@ -1,3 +1,4 @@
+import { NumericInput, SearchableSelect } from '@/shared/ui'
 import type { Homeowner } from '@/shared/types/waterSmartBill'
 import type { useTariffsMeters } from './useTariffsMeters'
 
@@ -41,17 +42,18 @@ export function TariffsMetersScreen({
             <label className="mb-1 block text-xs font-medium text-slate-600">
               ค่ารักษามาตรวัดน้ำ (บาท/เดือน)
             </label>
-            <input
-              type="number"
+            <NumericInput
+              aria-label="ค่ารักษามาตรวัดน้ำ"
               className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
               value={reserveFee}
-              onChange={(e) => setReserveFee(Number(e.target.value) || 0)}
+              decimalScale={2}
+              onValueChange={(_, floatVal) => setReserveFee(floatVal ?? 0)}
             />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">ภาษีมูลค่าเพิ่ม VAT (%)</label>
-            <input
-              type="number"
+            <NumericInput
+              aria-label="ภาษีมูลค่าเพิ่ม VAT"
               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm"
               value={vatRate}
               readOnly
@@ -77,13 +79,14 @@ export function TariffsMetersScreen({
                     {t.min_units} - {t.max_units ?? 'ขึ้นไป'} หน่วย
                   </td>
                   <td className="px-3 py-2">
-                    <input
-                      type="number"
+                    <NumericInput
+                      aria-label={`ราคาต่อหน่วย Tier ${t.tier_order}`}
                       className="w-24 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
                       value={t.rate_per_unit}
-                      onChange={(e) => {
+                      decimalScale={2}
+                      onValueChange={(_, floatVal) => {
                         const updated = [...tiers]
-                        updated[idx] = { ...t, rate_per_unit: Number(e.target.value) || 0 }
+                        updated[idx] = { ...t, rate_per_unit: floatVal ?? 0 }
                         setTiers(updated)
                       }}
                     />{' '}
@@ -111,13 +114,14 @@ export function TariffsMetersScreen({
                 </p>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <input
-                  type="number"
+                <NumericInput
+                  aria-label={`ราคาต่อหน่วยมือถือ Tier ${t.tier_order}`}
                   className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 font-mono text-sm text-right font-bold text-sky-700 shadow-2xs"
                   value={t.rate_per_unit}
-                  onChange={(e) => {
+                  decimalScale={2}
+                  onValueChange={(_, floatVal) => {
                     const updated = [...tiers]
-                    updated[idx] = { ...t, rate_per_unit: Number(e.target.value) || 0 }
+                    updated[idx] = { ...t, rate_per_unit: floatVal ?? 0 }
                     setTiers(updated)
                   }}
                 />
@@ -156,17 +160,15 @@ export function TariffsMetersScreen({
         <form onSubmit={handleRegisterMeter} className="grid grid-cols-3 gap-2.5">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">เจ้าของบ้าน</label>
-            <select
-              className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm"
+            <SearchableSelect
+              ariaLabel="เจ้าของบ้าน"
+              options={homeowners.map((h) => ({
+                value: h.id,
+                label: `${h.firstname} (${h.house_no})`,
+              }))}
               value={newMeterOwnerId}
-              onChange={(e) => setNewMeterOwnerId(Number(e.target.value))}
-            >
-              {homeowners.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.firstname} ({h.house_no})
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setNewMeterOwnerId(val)}
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">เลขทะเบียนมิเตอร์</label>
@@ -180,11 +182,12 @@ export function TariffsMetersScreen({
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">เลขตั้งต้น (m³)</label>
             <div className="flex gap-1.5">
-              <input
-                type="number"
+              <NumericInput
+                aria-label="เลขตั้งต้น"
                 className="w-full rounded-lg border border-slate-200 px-2.5 py-2 text-sm"
                 value={newMeterInitialReading}
-                onChange={(e) => setNewMeterInitialReading(e.target.value)}
+                decimalScale={2}
+                onValueChange={(raw) => setNewMeterInitialReading(raw)}
               />
               <button
                 type="submit"
