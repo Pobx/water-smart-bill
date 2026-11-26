@@ -19,12 +19,13 @@ function Harness({ initial = '' }: { initial?: string }) {
 }
 
 describe('NumericInput (react-number-format)', () => {
-  it('renders a plain text input with decimal inputMode (never type="number")', () => {
+  it('renders a plain text input with decimal inputMode and right-aligned tabular numerals', () => {
     render(<Harness initial="1230" />)
     const input = screen.getByLabelText('จำนวนเงิน') as HTMLInputElement
     expect(input.type).toBe('text')
     expect(input.getAttribute('inputmode')).toBe('decimal')
     expect(input.value).toBe('1,230')
+    expect(input).toHaveClass('text-right', 'tabular-nums')
   })
 
   it('formats numbers >= 4 digits with commas, supports 0 and 0.10, and strips invalid leading zeros like 0,1234', async () => {

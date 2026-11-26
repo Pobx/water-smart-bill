@@ -48,6 +48,16 @@ export function NumericInput({
         ? normalizeNumericRawValue(value)
         : value
 
+  const mergedClassName = [
+    className?.includes('text-left') || className?.includes('text-center') || className?.includes('text-right')
+      ? ''
+      : 'text-right',
+    className?.includes('tabular-nums') ? '' : 'tabular-nums',
+    className ?? '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
     <NumericFormat
       id={id}
@@ -62,7 +72,7 @@ export function NumericInput({
       decimalScale={allowDecimal ? decimalScale : 0}
       allowedDecimalSeparators={allowDecimal ? ['.'] : []}
       placeholder={placeholder}
-      className={className}
+      className={mergedClassName}
       readOnly={readOnly}
       disabled={disabled}
       onValueChange={(values: NumberFormatValues) => {
