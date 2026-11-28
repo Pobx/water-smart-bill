@@ -1924,7 +1924,7 @@ func TestAssignIncident_StaffOnly(t *testing.T) {
 	}
 
 	// Reassign in_progress -> in_progress records previous assignee in description
-	reassignReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":3}`))
+	reassignReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":1}`))
 	reassignReq.Header.Set("Authorization", "Bearer valid-reader-token")
 	reassignReq.Header.Set("Content-Type", "application/json")
 	reassignRec := httptest.NewRecorder()
@@ -1938,11 +1938,85 @@ func TestAssignIncident_StaffOnly(t *testing.T) {
 		Description string `json:"description"`
 	}
 	_ = json.Unmarshal(reassignRec.Body.Bytes(), &reassigned)
-	if reassigned.Status != "in_progress" || reassigned.AssignedTo == nil || *reassigned.AssignedTo != 3 {
+	if reassigned.Status != "in_progress" || reassigned.AssignedTo == nil || *reassigned.AssignedTo != 1 {
 		t.Fatalf("unexpected reassigned incident: %+v", reassigned)
 	}
 	if !strings.Contains(reassigned.Description, "2") {
 		t.Fatalf("expected previous assignee 2 to be recorded in description, got: %q", reassigned.Description)
+	}
+
+	// Assigning nonexistent staff_id -> 400 Bad Request
+	missingStaffReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":99999}`))
+	missingStaffReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	missingStaffReq.Header.Set("Content-Type", "application/json")
+	missingStaffRec := httptest.NewRecorder()
+	srv.ServeHTTP(missingStaffRec, missingStaffReq)
+	if missingStaffRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for nonexistent staff_id, got %d: %s", missingStaffRec.Code, missingStaffRec.Body.String())
+	}
+
+	// Assigning cross-org staff_id -> 400 Bad Request
+	repo.SeedCrossOrgHomeowner(application.HomeownerUser{
+		ID:        200,
+		OrgID:     2,
+		FirstName: "ต่างอบต",
+		LastName:  "เจ้าหน้าที่",
+	})
+	crossOrgReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":200}`))
+	crossOrgReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	crossOrgReq.Header.Set("Content-Type", "application/json")
+	crossOrgRec := httptest.NewRecorder()
+	srv.ServeHTTP(crossOrgRec, crossOrgReq)
+	if crossOrgRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for cross-org staff_id, got %d: %s", crossOrgRec.Code, crossOrgRec.Body.String())
+	}
+}
+
+func TestIncidents_UnresolvableCallerFailsClosed(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// Seed an incident owned by resident 1 so /incidents/my would leak it if fallback existed
+	bSeed, ctSeed := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "no_water",
+		"description":   "ข้อมูลของลูกบ้าน 1",
+	}, "", "", nil)
+	seedReq := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", bSeed)
+	seedReq.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	seedReq.Header.Set("Content-Type", ctSeed)
+	seedRec := httptest.NewRecorder()
+	srv.ServeHTTP(seedRec, seedReq)
+	if seedRec.Code != http.StatusCreated {
+		t.Fatalf("seed incident failed: %d %s", seedRec.Code, seedRec.Body.String())
+	}
+
+	// valid-user-token has Subject="sub-user" (non-numeric, no UserID claim) -> must fail closed with 403
+	bCreate, ctCreate := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "other",
+		"description":   "impersonation attempt",
+	}, "", "", nil)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", bCreate)
+	createReq.Header.Set("Authorization", "Bearer valid-user-token")
+	createReq.Header.Set("Content-Type", ctCreate)
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for unresolvable caller on POST /incidents, got %d: %s", createRec.Code, createRec.Body.String())
+	}
+
+	myReq := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/my", nil)
+	myReq.Header.Set("Authorization", "Bearer valid-user-token")
+	myRec := httptest.NewRecorder()
+	srv.ServeHTTP(myRec, myReq)
+	if myRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for unresolvable caller on GET /incidents/my, got %d: %s", myRec.Code, myRec.Body.String())
 	}
 }
 

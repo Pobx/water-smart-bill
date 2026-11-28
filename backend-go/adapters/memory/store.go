@@ -1068,6 +1068,12 @@ func (s *Store) SeedCrossOrgMeterAndInvoice(meter application.WaterMeter, inv ap
 	s.invoices = append(s.invoices, inv)
 }
 
+func (s *Store) SeedCrossOrgHomeowner(u application.HomeownerUser) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.homeowners = append(s.homeowners, u)
+}
+
 func (s *Store) InsertDebtNotice(_ context.Context, orgID *int64, cmd application.CreateDebtNoticeCommand) (application.DebtNotice, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1416,6 +1422,17 @@ func (s *Store) AssignIncident(_ context.Context, orgID *int64, id string, staff
 	cur := &s.incidents[idx]
 	if cur.Status != application.IncidentStatusOpen && cur.Status != application.IncidentStatusInProgress {
 		return application.Incident{}, fmt.Errorf("%w: incident status %q cannot be assigned", application.ErrBadRequest, cur.Status)
+	}
+
+	staffExists := false
+	for _, u := range s.homeowners {
+		if u.ID == staffID && u.OrgID == cur.OrgID {
+			staffExists = true
+			break
+		}
+	}
+	if !staffExists {
+		return application.Incident{}, fmt.Errorf("%w: staff_id not found in organization", application.ErrBadRequest)
 	}
 
 	if cur.AssignedTo != nil && *cur.AssignedTo != staffID {

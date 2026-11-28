@@ -1540,6 +1540,16 @@ FOR UPDATE
 		return application.Incident{}, fmt.Errorf("%w: incident status %q cannot be assigned", application.ErrBadRequest, status)
 	}
 
+	var staffExists bool
+	if err := tx.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND org_id = $2)
+`, staffID, incOrgID).Scan(&staffExists); err != nil {
+		return application.Incident{}, err
+	}
+	if !staffExists {
+		return application.Incident{}, fmt.Errorf("%w: staff_id not found in organization", application.ErrBadRequest)
+	}
+
 	if prevAssigned != nil && *prevAssigned != staffID {
 		note := fmt.Sprintf("[reassigned from staff #%d]", *prevAssigned)
 		if strings.TrimSpace(desc) == "" {

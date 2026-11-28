@@ -590,9 +590,9 @@ func (s *WaterBillService) CreateIncident(ctx context.Context, claims applicatio
 	if scoped != nil {
 		orgID = *scoped
 	}
-	reporterUserID := int64(1)
-	if uid, ok := claims.ResolvedUserID(); ok {
-		reporterUserID = uid
+	reporterUserID, ok := claims.ResolvedUserID()
+	if !ok || reporterUserID <= 0 {
+		return application.Incident{}, fmt.Errorf("%w: unable to resolve caller user id", application.ErrForbidden)
 	}
 	return s.Repository.InsertIncident(ctx, orgID, reporterUserID, cmd)
 }
@@ -622,9 +622,9 @@ func (s *WaterBillService) GetMyIncidents(ctx context.Context, claims applicatio
 	if err != nil {
 		return nil, err
 	}
-	reporterUserID := int64(1)
-	if uid, ok := claims.ResolvedUserID(); ok {
-		reporterUserID = uid
+	reporterUserID, ok := claims.ResolvedUserID()
+	if !ok || reporterUserID <= 0 {
+		return nil, fmt.Errorf("%w: unable to resolve caller user id", application.ErrForbidden)
 	}
 	items, err := s.Repository.FindMyIncidents(ctx, scoped, reporterUserID)
 	if err != nil {
