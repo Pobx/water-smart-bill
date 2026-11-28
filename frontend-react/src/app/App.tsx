@@ -7,9 +7,10 @@ import { LiffPortalScreen, useLiffPortal } from '@/features/liff-portal'
 import { FinanceCashierScreen } from '@/features/finance-cashier'
 import { DebtNoticeListScreen } from '@/features/debt-management'
 import { DailyCollectionReport } from '@/features/reports'
+import { IncidentDashboard } from '@/features/incidents'
 import { SearchableSelect } from '@/shared/ui'
 
-export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff' | 'debt' | 'reports'
+export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff' | 'debt' | 'reports' | 'incidents'
 
 export interface MenuItem {
   id: TabKey
@@ -77,6 +78,14 @@ export const MENU_ITEMS: MenuItem[] = [
     allowedRoles: ['admin', 'finance_staff'],
     description: 'รายงานการรับชำระค่าน้ำประจำวัน/ตามช่วงเวลา และส่งออกไฟล์ Excel (.xlsx)',
   },
+  {
+    id: 'incidents',
+    label: '8. แจ้งเหตุขัดข้อง (Incidents)',
+    shortLabel: 'แจ้งเหตุขัดข้อง',
+    icon: '🚨',
+    allowedRoles: ['admin', 'tabwater_staff'],
+    description: 'ตรวจสอบเหตุขัดข้องน้ำประปา, รับงานซ่อม, ดูพิกัด GPS และปิดงาน',
+  },
 ]
 
 export function App() {
@@ -108,7 +117,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('tab') as TabKey
-      if (param && ['master', 'tariffs', 'reader', 'cashier', 'liff', 'debt', 'reports'].includes(param)) {
+      if (param && ['master', 'tariffs', 'reader', 'cashier', 'liff', 'debt', 'reports', 'incidents'].includes(param)) {
         return param
       }
     }
@@ -369,6 +378,10 @@ export function App() {
 
           {resolvedActiveTab === 'reports' && (
             <DailyCollectionReport token={auth.jwtToken} />
+          )}
+
+          {resolvedActiveTab === 'incidents' && (
+            <IncidentDashboard token={auth.jwtToken} />
           )}
         </main>
       </div>
