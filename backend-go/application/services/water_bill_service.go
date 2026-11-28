@@ -575,3 +575,115 @@ func (s *WaterBillService) ExportCollectionReportCSV(ctx context.Context, claims
 
 	return buf.Bytes(), nil
 }
+
+func (s *WaterBillService) CreateIncident(ctx context.Context, claims application.Claims, cmd application.CreateIncidentCommand) (application.Incident, error) {
+	cmd.IncidentType = strings.ToLower(strings.TrimSpace(cmd.IncidentType))
+	cmd.Description = strings.TrimSpace(cmd.Description)
+	if _, err := cmd.IsValid(); err != nil {
+		return application.Incident{}, err
+	}
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	orgID := int64(1)
+	if scoped != nil {
+		orgID = *scoped
+	}
+	reporterUserID := int64(1)
+	if uid, ok := claims.ResolvedUserID(); ok {
+		reporterUserID = uid
+	}
+	return s.Repository.InsertIncident(ctx, orgID, reporterUserID, cmd)
+}
+
+func (s *WaterBillService) ListIncidents(ctx context.Context, claims application.Claims, filter application.IncidentFilter) ([]application.Incident, error) {
+	status := strings.ToLower(strings.TrimSpace(filter.Status))
+	if status != "" && !application.IsValidIncidentStatus(status) {
+		return nil, fmt.Errorf("%w: invalid incident status %q", application.ErrBadRequest, filter.Status)
+	}
+	filter.Status = status
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.Repository.FindIncidents(ctx, scoped, filter)
+	if err != nil {
+		return nil, err
+	}
+	if items == nil {
+		return []application.Incident{}, nil
+	}
+	return items, nil
+}
+
+func (s *WaterBillService) GetMyIncidents(ctx context.Context, claims application.Claims) ([]application.Incident, error) {
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return nil, err
+	}
+	reporterUserID := int64(1)
+	if uid, ok := claims.ResolvedUserID(); ok {
+		reporterUserID = uid
+	}
+	items, err := s.Repository.FindMyIncidents(ctx, scoped, reporterUserID)
+	if err != nil {
+		return nil, err
+	}
+	if items == nil {
+		return []application.Incident{}, nil
+	}
+	return items, nil
+}
+
+func (s *WaterBillService) GetIncidentByID(ctx context.Context, claims application.Claims, id string) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	inc, err := s.Repository.FindIncidentByID(ctx, scoped, trimmed)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if !claims.HasAnyRole(application.RoleTabwaterStaff, application.RoleAdmin, application.RoleSuperAdmin) {
+		callerID, ok := claims.ResolvedUserID()
+		if !ok || inc.ReporterUserID != callerID {
+			return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+		}
+	}
+	return inc, nil
+}
+
+func (s *WaterBillService) AssignIncident(ctx context.Context, claims application.Claims, id string, cmd application.AssignIncidentCommand) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.Incident{}, err
+	}
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	return s.Repository.AssignIncident(ctx, scoped, trimmed, cmd.StaffID)
+}
+
+func (s *WaterBillService) ResolveIncident(ctx context.Context, claims application.Claims, id string, cmd application.ResolveIncidentCommand) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.Incident{}, err
+	}
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	return s.Repository.ResolveIncident(ctx, scoped, trimmed, strings.TrimSpace(cmd.ResolutionNote))
+}

@@ -36,6 +36,12 @@ type WaterBillRepositoryInterface interface {
 	FindDebtNoticeByID(ctx context.Context, orgID *int64, id string) (application.DebtNotice, error)
 	CutMeterByDebtNotice(ctx context.Context, orgID *int64, id string, cmd application.CutMeterCommand) (application.DebtNotice, error)
 	RestoreMeterByDebtNotice(ctx context.Context, orgID *int64, id string, restoredBy int64) (application.DebtNotice, error)
+	InsertIncident(ctx context.Context, orgID int64, reporterUserID int64, cmd application.CreateIncidentCommand) (application.Incident, error)
+	FindIncidents(ctx context.Context, orgID *int64, filter application.IncidentFilter) ([]application.Incident, error)
+	FindMyIncidents(ctx context.Context, orgID *int64, reporterUserID int64) ([]application.Incident, error)
+	FindIncidentByID(ctx context.Context, orgID *int64, id string) (application.Incident, error)
+	AssignIncident(ctx context.Context, orgID *int64, id string, staffID int64) (application.Incident, error)
+	ResolveIncident(ctx context.Context, orgID *int64, id string, resolutionNote string) (application.Incident, error)
 	GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error)
 	LinkLiffAccount(ctx context.Context, cmd application.LiffLinkAccountCommand) (application.LiffResidentPortalData, error)
 }

@@ -43,6 +43,7 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	}
 	_ = os.MkdirAll(filepath.Join(uploadDir, "avatars"), 0o755)
 	_ = os.MkdirAll(filepath.Join(uploadDir, "meters"), 0o755)
+	_ = os.MkdirAll(filepath.Join(uploadDir, "incidents"), 0o755)
 	e.Static("/uploads", uploadDir)
 
 	// Health & Readiness
@@ -136,6 +137,14 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	api.PATCH("/debt-notices/:id/cut", restHandler.CutMeter, RequireRoles(rolesStaffOrAdmin))
 	api.PATCH("/debt-notices/:id/restore", restHandler.RestoreMeter, RequireRoles(rolesStaffOrAdmin))
 	api.GET("/users/:user_id/debt-notices", restHandler.GetUserDebtNotices, RequireRoles(rolesStaffAdminOrUser))
+
+	// Incident Reporting (GPS + Photo + Assign/Resolve Workflow)
+	api.POST("/incidents", restHandler.CreateIncident, RequireRoles(rolesStaffAdminOrUser))
+	api.GET("/incidents", restHandler.ListIncidents, RequireRoles(rolesStaffOrAdmin))
+	api.GET("/incidents/my", restHandler.GetMyIncidents, RequireRoles(rolesStaffAdminOrUser))
+	api.GET("/incidents/:id", restHandler.GetIncidentByID, RequireRoles(rolesStaffAdminOrUser))
+	api.PATCH("/incidents/:id/assign", restHandler.AssignIncident, RequireRoles(rolesStaffOrAdmin))
+	api.PATCH("/incidents/:id/resolve", restHandler.ResolveIncident, RequireRoles(rolesStaffOrAdmin))
 
 	return e
 }

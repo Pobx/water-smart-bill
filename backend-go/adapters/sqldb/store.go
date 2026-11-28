@@ -1376,6 +1376,244 @@ WHERE user_id = $1 AND org_id = $2
 	return updated, nil
 }
 
+const incidentListSelectCols = `
+SELECT i.id::text, i.org_id, i.reporter_user_id,
+       COALESCE(TRIM(CONCAT(u.prefix, u.firstname, ' ', u.lastname)), ''),
+       i.incident_type, COALESCE(i.description, ''),
+       COALESCE(i.photo_url, ''), i.status,
+       i.assigned_to, COALESCE(i.assigned_at::text, ''),
+       COALESCE(i.resolved_at::text, ''), COALESCE(i.resolution_note, ''),
+       i.created_at::text
+FROM incidents i
+LEFT JOIN users u ON u.id = i.reporter_user_id AND u.org_id = i.org_id
+`
+
+const incidentDetailSelectCols = `
+SELECT i.id::text, i.org_id, i.reporter_user_id,
+       COALESCE(TRIM(CONCAT(u.prefix, u.firstname, ' ', u.lastname)), ''),
+       i.incident_type, COALESCE(i.description, ''),
+       i.lat::float8, i.lng::float8,
+       COALESCE(i.photo_url, ''), i.status,
+       i.assigned_to, COALESCE(i.assigned_at::text, ''),
+       COALESCE(i.resolved_at::text, ''), COALESCE(i.resolution_note, ''),
+       i.created_at::text
+FROM incidents i
+LEFT JOIN users u ON u.id = i.reporter_user_id AND u.org_id = i.org_id
+`
+
+func scanIncidentList(row pgx.Row) (application.Incident, error) {
+	var inc application.Incident
+	if err := row.Scan(
+		&inc.ID, &inc.OrgID, &inc.ReporterUserID,
+		&inc.ReporterName,
+		&inc.IncidentType, &inc.Description,
+		&inc.PhotoURL, &inc.Status,
+		&inc.AssignedTo, &inc.AssignedAt,
+		&inc.ResolvedAt, &inc.ResolutionNote,
+		&inc.CreatedAt,
+	); err != nil {
+		return application.Incident{}, err
+	}
+	return inc, nil
+}
+
+func scanIncidentDetail(row pgx.Row) (application.Incident, error) {
+	var inc application.Incident
+	if err := row.Scan(
+		&inc.ID, &inc.OrgID, &inc.ReporterUserID,
+		&inc.ReporterName,
+		&inc.IncidentType, &inc.Description,
+		&inc.Lat, &inc.Lng,
+		&inc.PhotoURL, &inc.Status,
+		&inc.AssignedTo, &inc.AssignedAt,
+		&inc.ResolvedAt, &inc.ResolutionNote,
+		&inc.CreatedAt,
+	); err != nil {
+		return application.Incident{}, err
+	}
+	return inc, nil
+}
+
+func (s *Store) InsertIncident(ctx context.Context, orgID int64, reporterUserID int64, cmd application.CreateIncidentCommand) (application.Incident, error) {
+	var newID string
+	err := s.db.QueryRow(ctx, `
+INSERT INTO incidents (org_id, reporter_user_id, incident_type, description, lat, lng, photo_url, status)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), 'open')
+RETURNING id::text
+`, orgID, reporterUserID, strings.ToLower(strings.TrimSpace(cmd.IncidentType)), strings.TrimSpace(cmd.Description), cmd.Lat, cmd.Lng, strings.TrimSpace(cmd.PhotoURL)).Scan(&newID)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	return scanIncidentDetail(s.db.QueryRow(ctx, incidentDetailSelectCols+`WHERE i.id = $1::uuid AND i.org_id = $2`, newID, orgID))
+}
+
+func (s *Store) FindIncidents(ctx context.Context, orgID *int64, filter application.IncidentFilter) ([]application.Incident, error) {
+	q := incidentListSelectCols + `
+WHERE ($1::bigint IS NULL OR i.org_id = $1)
+  AND ($2 = '' OR LOWER(i.status) = LOWER($2))
+  AND ($3::bigint IS NULL OR i.assigned_to = $3)
+ORDER BY i.created_at DESC
+`
+	rows, err := s.db.Query(ctx, q, orgID, strings.TrimSpace(filter.Status), filter.AssignedTo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]application.Incident, 0)
+	for rows.Next() {
+		inc, err := scanIncidentList(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inc)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) FindMyIncidents(ctx context.Context, orgID *int64, reporterUserID int64) ([]application.Incident, error) {
+	q := incidentListSelectCols + `
+WHERE ($1::bigint IS NULL OR i.org_id = $1)
+  AND i.reporter_user_id = $2
+ORDER BY i.created_at DESC
+`
+	rows, err := s.db.Query(ctx, q, orgID, reporterUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]application.Incident, 0)
+	for rows.Next() {
+		inc, err := scanIncidentList(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inc)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) FindIncidentByID(ctx context.Context, orgID *int64, id string) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	q := incidentDetailSelectCols + `WHERE i.id = $1::uuid AND ($2::bigint IS NULL OR i.org_id = $2)`
+	inc, err := scanIncidentDetail(s.db.QueryRow(ctx, q, trimmed, orgID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.Incident{}, err
+	}
+	return inc, nil
+}
+
+func (s *Store) AssignIncident(ctx context.Context, orgID *int64, id string, staffID int64) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var incOrgID int64
+	var status, desc string
+	var prevAssigned *int64
+	err = tx.QueryRow(ctx, `
+SELECT org_id, status, assigned_to, COALESCE(description, '')
+FROM incidents
+WHERE id = $1::uuid AND ($2::bigint IS NULL OR org_id = $2)
+FOR UPDATE
+`, trimmed, orgID).Scan(&incOrgID, &status, &prevAssigned, &desc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if status != application.IncidentStatusOpen && status != application.IncidentStatusInProgress {
+		return application.Incident{}, fmt.Errorf("%w: incident status %q cannot be assigned", application.ErrBadRequest, status)
+	}
+
+	if prevAssigned != nil && *prevAssigned != staffID {
+		note := fmt.Sprintf("[reassigned from staff #%d]", *prevAssigned)
+		if strings.TrimSpace(desc) == "" {
+			desc = note
+		} else {
+			desc = desc + "\n" + note
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE incidents
+SET status = 'in_progress', assigned_to = $2, assigned_at = NOW(), description = $3
+WHERE id = $1::uuid AND org_id = $4
+`, trimmed, staffID, desc, incOrgID); err != nil {
+		return application.Incident{}, err
+	}
+
+	updated, err := scanIncidentDetail(tx.QueryRow(ctx, incidentDetailSelectCols+`WHERE i.id = $1::uuid AND i.org_id = $2`, trimmed, incOrgID))
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.Incident{}, err
+	}
+	return updated, nil
+}
+
+func (s *Store) ResolveIncident(ctx context.Context, orgID *int64, id string, resolutionNote string) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var incOrgID int64
+	var status string
+	err = tx.QueryRow(ctx, `
+SELECT org_id, status
+FROM incidents
+WHERE id = $1::uuid AND ($2::bigint IS NULL OR org_id = $2)
+FOR UPDATE
+`, trimmed, orgID).Scan(&incOrgID, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if status != application.IncidentStatusInProgress {
+		return application.Incident{}, fmt.Errorf("%w: incident status %q must be in_progress to resolve", application.ErrBadRequest, status)
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE incidents
+SET status = 'resolved', resolved_at = NOW(), resolution_note = $2
+WHERE id = $1::uuid AND org_id = $3
+`, trimmed, strings.TrimSpace(resolutionNote), incOrgID); err != nil {
+		return application.Incident{}, err
+	}
+
+	updated, err := scanIncidentDetail(tx.QueryRow(ctx, incidentDetailSelectCols+`WHERE i.id = $1::uuid AND i.org_id = $2`, trimmed, incOrgID))
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.Incident{}, err
+	}
+	return updated, nil
+}
+
 func (s *Store) GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {
 	users, err := s.ListHomeowners(ctx, nil, "")
 	if err != nil || len(users) == 0 {

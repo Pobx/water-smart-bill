@@ -815,3 +815,123 @@ type CollectionSummaryReport struct {
 	GeneratedAt      string         `json:"generated_at"`
 	Invoices         []WaterInvoice `json:"invoices"`
 }
+
+// ---- Incident Reporting Models (GPS, Photo, Assign/Resolve Workflow) --------
+
+const (
+	IncidentTypeNoWater     = "no_water"
+	IncidentTypeCloudyWater = "cloudy_water"
+	IncidentTypeBrokenPipe  = "broken_pipe"
+	IncidentTypeOther       = "other"
+
+	IncidentStatusOpen       = "open"
+	IncidentStatusInProgress = "in_progress"
+	IncidentStatusResolved   = "resolved"
+	IncidentStatusClosed     = "closed"
+)
+
+func IsValidIncidentType(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case IncidentTypeNoWater, IncidentTypeCloudyWater, IncidentTypeBrokenPipe, IncidentTypeOther:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidIncidentStatus(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case IncidentStatusOpen, IncidentStatusInProgress, IncidentStatusResolved, IncidentStatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+type Incident struct {
+	ID             string   `json:"id"`
+	OrgID          int64    `json:"org_id"`
+	ReporterUserID int64    `json:"reporter_user_id"`
+	ReporterName   string   `json:"reporter_name,omitempty"`
+	IncidentType   string   `json:"incident_type"`
+	Description    string   `json:"description,omitempty"`
+	Lat            *float64 `json:"lat,omitempty"`
+	Lng            *float64 `json:"lng,omitempty"`
+	PhotoURL       string   `json:"photo_url,omitempty"`
+	Status         string   `json:"status"`
+	AssignedTo     *int64   `json:"assigned_to,omitempty"`
+	AssignedAt     string   `json:"assigned_at,omitempty"`
+	ResolvedAt     string   `json:"resolved_at,omitempty"`
+	ResolutionNote string   `json:"resolution_note,omitempty"`
+	CreatedAt      string   `json:"created_at"`
+}
+
+type IncidentFilter struct {
+	Status     string
+	AssignedTo *int64
+}
+
+type CreateIncidentCommand struct {
+	IncidentType string   `json:"incident_type"`
+	Description  string   `json:"description"`
+	Lat          *float64 `json:"lat,omitempty"`
+	Lng          *float64 `json:"lng,omitempty"`
+	PhotoURL     string   `json:"photo_url,omitempty"`
+}
+
+func (cmd CreateIncidentCommand) IsValid() (bool, error) {
+	if !IsValidIncidentType(cmd.IncidentType) {
+		return false, fmt.Errorf("%w: invalid incident_type (allowed: no_water, cloudy_water, broken_pipe, other)", ErrBadRequest)
+	}
+	if (cmd.Lat != nil && cmd.Lng == nil) || (cmd.Lat == nil && cmd.Lng != nil) {
+		return false, fmt.Errorf("%w: both lat and lng must be provided together", ErrBadRequest)
+	}
+	if cmd.Lat != nil {
+		if math.IsNaN(*cmd.Lat) || math.IsInf(*cmd.Lat, 0) || *cmd.Lat < -90 || *cmd.Lat > 90 {
+			return false, fmt.Errorf("%w: invalid coordinates", ErrBadRequest)
+		}
+	}
+	if cmd.Lng != nil {
+		if math.IsNaN(*cmd.Lng) || math.IsInf(*cmd.Lng, 0) || *cmd.Lng < -180 || *cmd.Lng > 180 {
+			return false, fmt.Errorf("%w: invalid coordinates", ErrBadRequest)
+		}
+	}
+	return true, nil
+}
+
+func (cmd CreateIncidentCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type AssignIncidentCommand struct {
+	StaffID int64 `json:"staff_id"`
+}
+
+func (cmd AssignIncidentCommand) IsValid() (bool, error) {
+	if cmd.StaffID <= 0 {
+		return false, fmt.Errorf("%w: staff_id must be positive", ErrBadRequest)
+	}
+	return true, nil
+}
+
+func (cmd AssignIncidentCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type ResolveIncidentCommand struct {
+	ResolutionNote string `json:"resolution_note"`
+}
+
+func (cmd ResolveIncidentCommand) IsValid() (bool, error) {
+	if strings.TrimSpace(cmd.ResolutionNote) == "" {
+		return false, fmt.Errorf("%w: resolution_note is required", ErrBadRequest)
+	}
+	return true, nil
+}
+
+func (cmd ResolveIncidentCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}

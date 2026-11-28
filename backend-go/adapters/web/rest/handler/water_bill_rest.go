@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -685,4 +686,181 @@ func (h *WaterBillRestHandler) GetCollectionReport(c echo.Context) error {
 		return MapDomainError(c, err)
 	}
 	return c.JSON(http.StatusOK, report)
+}
+
+const maxIncidentPhotoBytes = 10 * 1024 * 1024
+
+var incidentPhotoMIMEExt = map[string]string{
+	"image/jpeg": ".jpg",
+	"image/png":  ".png",
+	"image/webp": ".webp",
+}
+
+func generateUUIDv4() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+func (h *WaterBillRestHandler) CreateIncident(c echo.Context) error {
+	incidentType := strings.TrimSpace(c.FormValue("incident_type"))
+	description := strings.TrimSpace(c.FormValue("description"))
+
+	var latPtr, lngPtr *float64
+	if rawLat := strings.TrimSpace(c.FormValue("lat")); rawLat != "" {
+		v, err := strconv.ParseFloat(rawLat, 64)
+		if err != nil {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid coordinates")
+		}
+		latPtr = &v
+	}
+	if rawLng := strings.TrimSpace(c.FormValue("lng")); rawLng != "" {
+		v, err := strconv.ParseFloat(rawLng, 64)
+		if err != nil {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid coordinates")
+		}
+		lngPtr = &v
+	}
+
+	var photoURL string
+	var savedPath string
+	fileHeader, fileErr := c.FormFile("photo")
+	if fileErr == nil && fileHeader != nil {
+		if fileHeader.Size <= 0 || fileHeader.Size > maxIncidentPhotoBytes {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "photo file size must be between 1B and 10MB")
+		}
+		src, err := fileHeader.Open()
+		if err != nil {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "cannot read uploaded file")
+		}
+		defer src.Close()
+
+		data, err := io.ReadAll(io.LimitReader(src, maxIncidentPhotoBytes+1))
+		if err != nil || len(data) == 0 || len(data) > maxIncidentPhotoBytes {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "photo file size must be between 1B and 10MB")
+		}
+		detectedMIME := http.DetectContentType(data)
+		ext, ok := incidentPhotoMIMEExt[detectedMIME]
+		if !ok {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid file type")
+		}
+
+		fileID, err := generateUUIDv4()
+		if err != nil {
+			return WriteProblem(c, http.StatusInternalServerError, "Storage Error", "failed to generate filename")
+		}
+		incidentsDir := filepath.Join(h.UploadDir, "incidents")
+		if err := os.MkdirAll(incidentsDir, 0o755); err != nil {
+			return WriteProblem(c, http.StatusInternalServerError, "Storage Error", "failed to prepare upload directory")
+		}
+		filename := fileID + ext
+		savedPath = filepath.Join(incidentsDir, filename)
+		if err := os.WriteFile(savedPath, data, 0o644); err != nil {
+			return WriteProblem(c, http.StatusInternalServerError, "Storage Error", "failed to store photo")
+		}
+		photoURL = "/uploads/incidents/" + filename
+	} else if fileErr != nil && !errors.Is(fileErr, http.ErrMissingFile) && !errors.Is(fileErr, http.ErrNotMultipart) {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid multipart photo upload")
+	}
+
+	cmd := application.CreateIncidentCommand{
+		IncidentType: incidentType,
+		Description:  description,
+		Lat:          latPtr,
+		Lng:          lngPtr,
+		PhotoURL:     photoURL,
+	}
+	inc, err := h.Service.CreateIncident(c.Request().Context(), GetClaims(c), cmd)
+	if err != nil {
+		if savedPath != "" {
+			_ = os.Remove(savedPath)
+		}
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusCreated, inc)
+}
+
+func (h *WaterBillRestHandler) ListIncidents(c echo.Context) error {
+	var assignedTo *int64
+	if rawA := strings.TrimSpace(c.QueryParam("assigned_to")); rawA != "" {
+		parsed, err := strconv.ParseInt(rawA, 10, 64)
+		if err != nil || parsed <= 0 {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid assigned_to parameter")
+		}
+		assignedTo = &parsed
+	}
+	filter := application.IncidentFilter{
+		Status:     c.QueryParam("status"),
+		AssignedTo: assignedTo,
+	}
+	items, err := h.Service.ListIncidents(c.Request().Context(), GetClaims(c), filter)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *WaterBillRestHandler) GetMyIncidents(c echo.Context) error {
+	items, err := h.Service.GetMyIncidents(c.Request().Context(), GetClaims(c))
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *WaterBillRestHandler) GetIncidentByID(c echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return WriteProblem(c, http.StatusNotFound, "Not Found", "incident not found")
+	}
+	inc, err := h.Service.GetIncidentByID(c.Request().Context(), GetClaims(c), id)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, inc)
+}
+
+func (h *WaterBillRestHandler) AssignIncident(c echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return WriteProblem(c, http.StatusNotFound, "Not Found", "incident not found")
+	}
+	reqDTO := dto.NewAssignIncidentDTO()
+	if err := reqDTO.Bind(c); err != nil {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid JSON body")
+	}
+	cmd, err := reqDTO.ConvertToEntity()
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	updated, err := h.Service.AssignIncident(c.Request().Context(), GetClaims(c), id, cmd)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, updated)
+}
+
+func (h *WaterBillRestHandler) ResolveIncident(c echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return WriteProblem(c, http.StatusNotFound, "Not Found", "incident not found")
+	}
+	reqDTO := dto.NewResolveIncidentDTO()
+	if err := reqDTO.Bind(c); err != nil {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid JSON body")
+	}
+	cmd, err := reqDTO.ConvertToEntity()
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	updated, err := h.Service.ResolveIncident(c.Request().Context(), GetClaims(c), id, cmd)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, updated)
 }

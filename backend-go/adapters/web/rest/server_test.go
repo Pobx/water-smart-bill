@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -1492,6 +1496,551 @@ func TestGetUserDebtNotices_ResidentSeesOwnOnly(t *testing.T) {
 	srv.ServeHTTP(recStaff, reqStaff)
 	if recStaff.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK for staff viewing user 1 debt notices, got %d: %s", recStaff.Code, recStaff.Body.String())
+	}
+}
+
+func buildIncidentMultipartRequest(t *testing.T, fields map[string]string, fileField, fileName string, fileBytes []byte) (*bytes.Buffer, string) {
+	t.Helper()
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		if err := w.WriteField(k, v); err != nil {
+			t.Fatalf("write multipart field %s: %v", k, err)
+		}
+	}
+	if fileField != "" && len(fileBytes) > 0 {
+		part, err := w.CreateFormFile(fileField, fileName)
+		if err != nil {
+			t.Fatalf("create multipart file: %v", err)
+		}
+		if _, err := io.Copy(part, bytes.NewReader(fileBytes)); err != nil {
+			t.Fatalf("copy multipart file: %v", err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	return &buf, w.FormDataContentType()
+}
+
+// minimalValidPNG is a valid 1x1 PNG file header+data detectable by http.DetectContentType as image/png.
+var minimalValidPNG = []byte{
+	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+	0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+	0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+	0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+	0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D,
+	0xB0, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+	0x44, 0xAE, 0x42, 0x60, 0x82,
+}
+
+func TestCreateIncident_ResidentWithGPS(t *testing.T) {
+	uploadDir := t.TempDir()
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    uploadDir,
+	})
+
+	var logBuf bytes.Buffer
+	origOut := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(origOut)
+
+	body, contentType := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "no_water",
+		"description":   "น้ำไม่ไหลตั้งแต่เช้า",
+		"lat":           "13.7563",
+		"lng":           "100.5018",
+	}, "photo", "pipe.png", minimalValidPNG)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", body)
+	req.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Evidence-hygiene: lat/lng must NEVER appear in log output
+	if strings.Contains(logBuf.String(), "13.7563") || strings.Contains(logBuf.String(), "100.5018") {
+		t.Fatalf("GPS coordinates leaked into log output: %s", logBuf.String())
+	}
+
+	var created struct {
+		ID             string   `json:"id"`
+		OrgID          int64    `json:"org_id"`
+		ReporterUserID int64    `json:"reporter_user_id"`
+		IncidentType   string   `json:"incident_type"`
+		Description    string   `json:"description"`
+		Lat            *float64 `json:"lat"`
+		Lng            *float64 `json:"lng"`
+		PhotoURL       string   `json:"photo_url"`
+		Status         string   `json:"status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created incident: %v", err)
+	}
+	if created.ID == "" || created.Status != "open" || created.IncidentType != "no_water" {
+		t.Fatalf("unexpected incident fields: %+v", created)
+	}
+	if created.ReporterUserID != 1 {
+		t.Fatalf("expected reporter_user_id 1, got %d", created.ReporterUserID)
+	}
+	if created.Lat == nil || *created.Lat != 13.7563 || created.Lng == nil || *created.Lng != 100.5018 {
+		t.Fatalf("expected lat=13.7563 lng=100.5018, got lat=%v lng=%v", created.Lat, created.Lng)
+	}
+	if !strings.HasPrefix(created.PhotoURL, "/uploads/incidents/") || !strings.HasSuffix(created.PhotoURL, ".png") {
+		t.Fatalf("expected photo_url in /uploads/incidents/*.png, got %q", created.PhotoURL)
+	}
+	savedFile := filepath.Join(uploadDir, "incidents", filepath.Base(created.PhotoURL))
+	if _, err := os.Stat(savedFile); err != nil {
+		t.Fatalf("expected uploaded photo to exist at %s: %v", savedFile, err)
+	}
+
+	// Resident 1 can view own incident detail (with GPS)
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/"+created.ID, nil)
+	detailReq.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	detailRec := httptest.NewRecorder()
+	srv.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for own incident detail, got %d: %s", detailRec.Code, detailRec.Body.String())
+	}
+
+	// Resident 2 attempting to view resident 1's incident -> 404 Not Found (prevent enumeration)
+	otherReq := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/"+created.ID, nil)
+	otherReq.Header.Set("Authorization", "Bearer valid-resident-2-token")
+	otherRec := httptest.NewRecorder()
+	srv.ServeHTTP(otherRec, otherReq)
+	if otherRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for resident 2 viewing resident 1's incident, got %d: %s", otherRec.Code, otherRec.Body.String())
+	}
+}
+
+func TestCreateIncident_WithoutGPS(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	body, contentType := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "broken_pipe",
+		"description":   "ท่อประปาแตกหน้าซอย 3",
+	}, "", "", nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", body)
+	req.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created without GPS, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		ID           string   `json:"id"`
+		IncidentType string   `json:"incident_type"`
+		Lat          *float64 `json:"lat"`
+		Lng          *float64 `json:"lng"`
+		Status       string   `json:"status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode incident: %v", err)
+	}
+	if created.ID == "" || created.IncidentType != "broken_pipe" || created.Status != "open" {
+		t.Fatalf("unexpected incident fields: %+v", created)
+	}
+	if created.Lat != nil || created.Lng != nil {
+		t.Fatalf("expected nil lat/lng, got lat=%v lng=%v", created.Lat, created.Lng)
+	}
+}
+
+func TestCreateIncident_InvalidMIME(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	pdfPayload := []byte("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n")
+	body, contentType := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "cloudy_water",
+		"description":   "น้ำขุ่นมาก",
+	}, "photo", "photo.pdf", pdfPayload)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", body)
+	req.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for PDF upload, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(rec.Body.String()), "invalid file type") {
+		t.Fatalf("expected error detail to contain 'invalid file type', got: %s", rec.Body.String())
+	}
+}
+
+func TestGetMyIncidents_ResidentSeesOnlyOwn(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// Resident 1 creates an incident
+	b1, ct1 := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "no_water",
+		"description":   "บ้าน 1 น้ำไม่ไหล",
+		"lat":           "13.7000",
+		"lng":           "100.5000",
+	}, "", "", nil)
+	r1 := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", b1)
+	r1.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	r1.Header.Set("Content-Type", ct1)
+	rec1 := httptest.NewRecorder()
+	srv.ServeHTTP(rec1, r1)
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("resident 1 create failed: %d %s", rec1.Code, rec1.Body.String())
+	}
+
+	// Resident 2 creates an incident
+	b2, ct2 := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "broken_pipe",
+		"description":   "บ้าน 2 ท่อแตก",
+	}, "", "", nil)
+	r2 := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", b2)
+	r2.Header.Set("Authorization", "Bearer valid-resident-2-token")
+	r2.Header.Set("Content-Type", ct2)
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, r2)
+	if rec2.Code != http.StatusCreated {
+		t.Fatalf("resident 2 create failed: %d %s", rec2.Code, rec2.Body.String())
+	}
+	var inc2 struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(rec2.Body.Bytes(), &inc2)
+
+	// Resident 1 calls GET /api/v1/incidents/my -> sees ONLY own incident
+	myReq := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/my", nil)
+	myReq.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	myRec := httptest.NewRecorder()
+	srv.ServeHTTP(myRec, myReq)
+	if myRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /incidents/my, got %d: %s", myRec.Code, myRec.Body.String())
+	}
+	var myResp struct {
+		Items []struct {
+			ID             string   `json:"id"`
+			ReporterUserID int64    `json:"reporter_user_id"`
+			Lat            *float64 `json:"lat"`
+			Lng            *float64 `json:"lng"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(myRec.Body.Bytes(), &myResp); err != nil {
+		t.Fatalf("decode /incidents/my: %v", err)
+	}
+	if len(myResp.Items) != 1 || myResp.Items[0].ReporterUserID != 1 {
+		t.Fatalf("expected only resident 1's incident, got %+v", myResp.Items)
+	}
+	if myResp.Items[0].Lat != nil || myResp.Items[0].Lng != nil {
+		t.Fatalf("expected list view to omit lat/lng, got lat=%v lng=%v", myResp.Items[0].Lat, myResp.Items[0].Lng)
+	}
+
+	// Resident 1 attempting GET /api/v1/incidents/:res2_id -> 404 Not Found
+	otherReq := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/"+inc2.ID, nil)
+	otherReq.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	otherRec := httptest.NewRecorder()
+	srv.ServeHTTP(otherRec, otherReq)
+	if otherRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for resident 1 reading resident 2's incident, got %d: %s", otherRec.Code, otherRec.Body.String())
+	}
+}
+
+func TestGetIncidents_StaffSeesAllInOrg(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	createForToken := func(token, incType string) string {
+		b, ct := buildIncidentMultipartRequest(t, map[string]string{
+			"incident_type": incType,
+			"description":   "แจ้งเหตุ " + incType,
+			"lat":           "13.7123",
+			"lng":           "100.5123",
+		}, "", "", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", b)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", ct)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create incident failed: %d %s", rec.Code, rec.Body.String())
+		}
+		var out struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return out.ID
+	}
+
+	id1 := createForToken("valid-resident-1-token", "no_water")
+	_ = createForToken("valid-resident-2-token", "broken_pipe")
+
+	// Resident cannot list all org incidents -> 403 Forbidden
+	resReq := httptest.NewRequest(http.MethodGet, "/api/v1/incidents", nil)
+	resReq.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	resRec := httptest.NewRecorder()
+	srv.ServeHTTP(resRec, resReq)
+	if resRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for resident listing all incidents, got %d: %s", resRec.Code, resRec.Body.String())
+	}
+
+	// Staff lists all org incidents -> 200 OK, omits lat/lng in list view
+	staffReq := httptest.NewRequest(http.MethodGet, "/api/v1/incidents?status=open", nil)
+	staffReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	staffRec := httptest.NewRecorder()
+	srv.ServeHTTP(staffRec, staffReq)
+	if staffRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for staff listing incidents, got %d: %s", staffRec.Code, staffRec.Body.String())
+	}
+	if strings.Contains(staffRec.Body.String(), `"lat"`) || strings.Contains(staffRec.Body.String(), `"lng"`) {
+		t.Fatalf("expected list view to omit lat/lng, got: %s", staffRec.Body.String())
+	}
+	var listResp struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(staffRec.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if len(listResp.Items) != 2 {
+		t.Fatalf("expected 2 incidents in org, got %d", len(listResp.Items))
+	}
+
+	// Staff detail view GET /api/v1/incidents/:id DOES include lat/lng
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/v1/incidents/"+id1, nil)
+	detailReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	detailRec := httptest.NewRecorder()
+	srv.ServeHTTP(detailRec, detailReq)
+	if detailRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for staff detail view, got %d: %s", detailRec.Code, detailRec.Body.String())
+	}
+	var detail struct {
+		Lat *float64 `json:"lat"`
+		Lng *float64 `json:"lng"`
+	}
+	_ = json.Unmarshal(detailRec.Body.Bytes(), &detail)
+	if detail.Lat == nil || *detail.Lat != 13.7123 || detail.Lng == nil || *detail.Lng != 100.5123 {
+		t.Fatalf("expected staff detail view to include lat/lng, got lat=%v lng=%v", detail.Lat, detail.Lng)
+	}
+}
+
+func TestAssignIncident_StaffOnly(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	b, ct := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "broken_pipe",
+		"description":   "ท่อแตก",
+	}, "", "", nil)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", b)
+	createReq.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	createReq.Header.Set("Content-Type", ct)
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create incident failed: %d %s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(createRec.Body.Bytes(), &created)
+
+	// User role -> 403 Forbidden
+	userReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":2}`))
+	userReq.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	userReq.Header.Set("Content-Type", "application/json")
+	userRec := httptest.NewRecorder()
+	srv.ServeHTTP(userRec, userReq)
+	if userRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for resident assign, got %d: %s", userRec.Code, userRec.Body.String())
+	}
+
+	// Staff role -> 200 OK, status becomes in_progress
+	staffReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":2}`))
+	staffReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	staffReq.Header.Set("Content-Type", "application/json")
+	staffRec := httptest.NewRecorder()
+	srv.ServeHTTP(staffRec, staffReq)
+	if staffRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for staff assign, got %d: %s", staffRec.Code, staffRec.Body.String())
+	}
+	var assigned struct {
+		Status     string `json:"status"`
+		AssignedTo *int64 `json:"assigned_to"`
+		AssignedAt string `json:"assigned_at"`
+	}
+	_ = json.Unmarshal(staffRec.Body.Bytes(), &assigned)
+	if assigned.Status != "in_progress" || assigned.AssignedTo == nil || *assigned.AssignedTo != 2 || assigned.AssignedAt == "" {
+		t.Fatalf("unexpected assigned incident: %+v", assigned)
+	}
+
+	// Reassign in_progress -> in_progress records previous assignee in description
+	reassignReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":3}`))
+	reassignReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	reassignReq.Header.Set("Content-Type", "application/json")
+	reassignRec := httptest.NewRecorder()
+	srv.ServeHTTP(reassignRec, reassignReq)
+	if reassignRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for reassign, got %d: %s", reassignRec.Code, reassignRec.Body.String())
+	}
+	var reassigned struct {
+		Status      string `json:"status"`
+		AssignedTo  *int64 `json:"assigned_to"`
+		Description string `json:"description"`
+	}
+	_ = json.Unmarshal(reassignRec.Body.Bytes(), &reassigned)
+	if reassigned.Status != "in_progress" || reassigned.AssignedTo == nil || *reassigned.AssignedTo != 3 {
+		t.Fatalf("unexpected reassigned incident: %+v", reassigned)
+	}
+	if !strings.Contains(reassigned.Description, "2") {
+		t.Fatalf("expected previous assignee 2 to be recorded in description, got: %q", reassigned.Description)
+	}
+}
+
+func TestResolveIncident_InvalidTransition(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	b, ct := buildIncidentMultipartRequest(t, map[string]string{
+		"incident_type": "other",
+		"description":   "มิเตอร์รั่ว",
+	}, "", "", nil)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/incidents", b)
+	createReq.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	createReq.Header.Set("Content-Type", ct)
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create incident failed: %d %s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(createRec.Body.Bytes(), &created)
+
+	// Resolving while status is still 'open' -> 400 Bad Request
+	openResolveReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/resolve", strings.NewReader(`{"resolution_note":"ซ่อมแล้ว"}`))
+	openResolveReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	openResolveReq.Header.Set("Content-Type", "application/json")
+	openResolveRec := httptest.NewRecorder()
+	srv.ServeHTTP(openResolveRec, openResolveReq)
+	if openResolveRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request resolving open incident, got %d: %s", openResolveRec.Code, openResolveRec.Body.String())
+	}
+
+	// Assign to move to in_progress
+	assignReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":2}`))
+	assignReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	assignReq.Header.Set("Content-Type", "application/json")
+	assignRec := httptest.NewRecorder()
+	srv.ServeHTTP(assignRec, assignReq)
+	if assignRec.Code != http.StatusOK {
+		t.Fatalf("assign failed: %d %s", assignRec.Code, assignRec.Body.String())
+	}
+
+	// Resolving with empty resolution_note -> 400 Bad Request
+	emptyNoteReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/resolve", strings.NewReader(`{"resolution_note":"   "}`))
+	emptyNoteReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	emptyNoteReq.Header.Set("Content-Type", "application/json")
+	emptyNoteRec := httptest.NewRecorder()
+	srv.ServeHTTP(emptyNoteRec, emptyNoteReq)
+	if emptyNoteRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for empty resolution_note, got %d: %s", emptyNoteRec.Code, emptyNoteRec.Body.String())
+	}
+
+	// Valid resolve -> 200 OK
+	resolveReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/resolve", strings.NewReader(`{"resolution_note":"เปลี่ยนข้อต่อใหม่เรียบร้อย"}`))
+	resolveReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	resolveReq.Header.Set("Content-Type", "application/json")
+	resolveRec := httptest.NewRecorder()
+	srv.ServeHTTP(resolveRec, resolveReq)
+	if resolveRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for valid resolve, got %d: %s", resolveRec.Code, resolveRec.Body.String())
+	}
+	var resolved struct {
+		Status         string `json:"status"`
+		ResolvedAt     string `json:"resolved_at"`
+		ResolutionNote string `json:"resolution_note"`
+	}
+	_ = json.Unmarshal(resolveRec.Body.Bytes(), &resolved)
+	if resolved.Status != "resolved" || resolved.ResolvedAt == "" || resolved.ResolutionNote != "เปลี่ยนข้อต่อใหม่เรียบร้อย" {
+		t.Fatalf("unexpected resolved incident: %+v", resolved)
+	}
+
+	// Resolving an already resolved incident -> 400 Bad Request
+	againReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/resolve", strings.NewReader(`{"resolution_note":"ซ้ำ"}`))
+	againReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	againReq.Header.Set("Content-Type", "application/json")
+	againRec := httptest.NewRecorder()
+	srv.ServeHTTP(againRec, againReq)
+	if againRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request resolving already resolved incident, got %d: %s", againRec.Code, againRec.Body.String())
+	}
+
+	// Assigning an already resolved incident -> 400 Bad Request
+	assignResolvedReq := httptest.NewRequest(http.MethodPatch, "/api/v1/incidents/"+created.ID+"/assign", strings.NewReader(`{"staff_id":3}`))
+	assignResolvedReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	assignResolvedReq.Header.Set("Content-Type", "application/json")
+	assignResolvedRec := httptest.NewRecorder()
+	srv.ServeHTTP(assignResolvedRec, assignResolvedReq)
+	if assignResolvedRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request assigning already resolved incident, got %d: %s", assignResolvedRec.Code, assignResolvedRec.Body.String())
 	}
 }
 

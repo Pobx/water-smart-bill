@@ -26,9 +26,11 @@ type Store struct {
 	meterRoutes    []application.MeterRoute
 	invoices       []application.WaterInvoice
 	paymentBatches map[string]application.PaymentBatchResult
-	debtNotices    []application.DebtNotice
-	nextDebtSeq    uint64
-	nextZoneID     int64
+	debtNotices     []application.DebtNotice
+	nextDebtSeq     uint64
+	incidents       []application.Incident
+	nextIncidentSeq uint64
+	nextZoneID      int64
 	nextSubID   int64
 	nextUserID  int64
 	nextPeriod  int64
@@ -277,8 +279,10 @@ func NewStore() *Store {
 			},
 		},
 		paymentBatches: map[string]application.PaymentBatchResult{},
-		debtNotices:    []application.DebtNotice{},
-		nextDebtSeq:    1,
+		debtNotices:     []application.DebtNotice{},
+		nextDebtSeq:     1,
+		incidents:       []application.Incident{},
+		nextIncidentSeq: 1,
 		nextZoneID:     3,
 		nextSubID:   3,
 		nextUserID:  3,
@@ -1279,6 +1283,185 @@ func (s *Store) RestoreMeterByDebtNotice(_ context.Context, orgID *int64, id str
 	}
 
 	return s.debtNotices[idx], nil
+}
+
+func (s *Store) InsertIncident(_ context.Context, orgID int64, reporterUserID int64, cmd application.CreateIncidentCommand) (application.Incident, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seq := s.nextIncidentSeq
+	s.nextIncidentSeq++
+	id := fmt.Sprintf("10000000-0000-4000-8000-%012d", seq)
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	var reporterName string
+	for _, h := range s.homeowners {
+		if h.ID == reporterUserID && h.OrgID == orgID {
+			reporterName = strings.TrimSpace(h.FirstName + " " + h.LastName)
+			break
+		}
+	}
+
+	var latCopy, lngCopy *float64
+	if cmd.Lat != nil {
+		v := *cmd.Lat
+		latCopy = &v
+	}
+	if cmd.Lng != nil {
+		v := *cmd.Lng
+		lngCopy = &v
+	}
+
+	inc := application.Incident{
+		ID:             id,
+		OrgID:          orgID,
+		ReporterUserID: reporterUserID,
+		ReporterName:   reporterName,
+		IncidentType:   strings.ToLower(strings.TrimSpace(cmd.IncidentType)),
+		Description:    strings.TrimSpace(cmd.Description),
+		Lat:            latCopy,
+		Lng:            lngCopy,
+		PhotoURL:       strings.TrimSpace(cmd.PhotoURL),
+		Status:         application.IncidentStatusOpen,
+		CreatedAt:      now,
+	}
+	s.incidents = append([]application.Incident{inc}, s.incidents...)
+	return inc, nil
+}
+
+func (s *Store) FindIncidents(_ context.Context, orgID *int64, filter application.IncidentFilter) ([]application.Incident, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	st := strings.ToLower(strings.TrimSpace(filter.Status))
+	out := make([]application.Incident, 0)
+	for _, inc := range s.incidents {
+		if orgID != nil && inc.OrgID != *orgID {
+			continue
+		}
+		if st != "" && strings.ToLower(inc.Status) != st {
+			continue
+		}
+		if filter.AssignedTo != nil {
+			if inc.AssignedTo == nil || *inc.AssignedTo != *filter.AssignedTo {
+				continue
+			}
+		}
+		// List view must omit lat/lng
+		item := inc
+		item.Lat = nil
+		item.Lng = nil
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *Store) FindMyIncidents(_ context.Context, orgID *int64, reporterUserID int64) ([]application.Incident, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]application.Incident, 0)
+	for _, inc := range s.incidents {
+		if orgID != nil && inc.OrgID != *orgID {
+			continue
+		}
+		if inc.ReporterUserID != reporterUserID {
+			continue
+		}
+		// List view must omit lat/lng
+		item := inc
+		item.Lat = nil
+		item.Lng = nil
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *Store) FindIncidentByID(_ context.Context, orgID *int64, id string) (application.Incident, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	for _, inc := range s.incidents {
+		if strings.ToLower(inc.ID) != target {
+			continue
+		}
+		if orgID != nil && inc.OrgID != *orgID {
+			return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+		}
+		return inc, nil
+	}
+	return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+}
+
+func (s *Store) AssignIncident(_ context.Context, orgID *int64, id string, staffID int64) (application.Incident, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	idx := -1
+	for i := range s.incidents {
+		if strings.ToLower(s.incidents[i].ID) == target {
+			if orgID != nil && s.incidents[i].OrgID != *orgID {
+				return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+			}
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+
+	cur := &s.incidents[idx]
+	if cur.Status != application.IncidentStatusOpen && cur.Status != application.IncidentStatusInProgress {
+		return application.Incident{}, fmt.Errorf("%w: incident status %q cannot be assigned", application.ErrBadRequest, cur.Status)
+	}
+
+	if cur.AssignedTo != nil && *cur.AssignedTo != staffID {
+		note := fmt.Sprintf("[reassigned from staff #%d]", *cur.AssignedTo)
+		if strings.TrimSpace(cur.Description) == "" {
+			cur.Description = note
+		} else {
+			cur.Description = cur.Description + "\n" + note
+		}
+	}
+
+	sid := staffID
+	cur.Status = application.IncidentStatusInProgress
+	cur.AssignedTo = &sid
+	cur.AssignedAt = time.Now().UTC().Format(time.RFC3339)
+	return *cur, nil
+}
+
+func (s *Store) ResolveIncident(_ context.Context, orgID *int64, id string, resolutionNote string) (application.Incident, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	idx := -1
+	for i := range s.incidents {
+		if strings.ToLower(s.incidents[i].ID) == target {
+			if orgID != nil && s.incidents[i].OrgID != *orgID {
+				return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+			}
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+
+	cur := &s.incidents[idx]
+	if cur.Status != application.IncidentStatusInProgress {
+		return application.Incident{}, fmt.Errorf("%w: incident status %q must be in_progress to resolve", application.ErrBadRequest, cur.Status)
+	}
+
+	cur.Status = application.IncidentStatusResolved
+	cur.ResolvedAt = time.Now().UTC().Format(time.RFC3339)
+	cur.ResolutionNote = strings.TrimSpace(resolutionNote)
+	return *cur, nil
 }
 
 func (s *Store) GetLiffPortalData(_ context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {

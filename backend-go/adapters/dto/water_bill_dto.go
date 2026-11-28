@@ -485,3 +485,47 @@ func (d *CutMeterDTO) ConvertToEntity() (application.CutMeterCommand, error) {
 	}
 	return cmd, nil
 }
+
+type AssignIncidentDTO struct {
+	StaffID int64 `json:"staff_id"`
+}
+
+func NewAssignIncidentDTO() *AssignIncidentDTO {
+	return &AssignIncidentDTO{}
+}
+
+func (d *AssignIncidentDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *AssignIncidentDTO) ConvertToEntity() (application.AssignIncidentCommand, error) {
+	cmd := application.AssignIncidentCommand{
+		StaffID: d.StaffID,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.AssignIncidentCommand{}, err
+	}
+	return cmd, nil
+}
+
+type ResolveIncidentDTO struct {
+	ResolutionNote string `json:"resolution_note"`
+}
+
+func NewResolveIncidentDTO() *ResolveIncidentDTO {
+	return &ResolveIncidentDTO{}
+}
+
+func (d *ResolveIncidentDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *ResolveIncidentDTO) ConvertToEntity() (application.ResolveIncidentCommand, error) {
+	cmd := application.ResolveIncidentCommand{
+		ResolutionNote: d.ResolutionNote,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.ResolveIncidentCommand{}, err
+	}
+	return cmd, nil
+}
