@@ -361,6 +361,22 @@ func (h *WaterBillRestHandler) ListMeters(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{"items": meters})
 }
 
+func (h *WaterBillRestHandler) GetMeterRoutes(c echo.Context) error {
+	var requestedOrgID *int64
+	if rawOrg := c.QueryParam("org_id"); rawOrg != "" {
+		parsed, err := strconv.ParseInt(rawOrg, 10, 64)
+		if err != nil {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid org_id parameter")
+		}
+		requestedOrgID = &parsed
+	}
+	routes, err := h.Service.ListMeterRoutes(c.Request().Context(), GetClaims(c), requestedOrgID)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": routes})
+}
+
 func (h *WaterBillRestHandler) CreateMeter(c echo.Context) error {
 	reqDTO := dto.NewCreateWaterMeterDTO()
 	if err := reqDTO.Bind(c); err != nil {

@@ -64,6 +64,14 @@ func (s *WaterBillService) ListZones(ctx context.Context, claims application.Cla
 	return s.Repository.ListZones(ctx, scoped)
 }
 
+func (s *WaterBillService) ListMeterRoutes(ctx context.Context, claims application.Claims, requestedOrgID *int64) ([]application.MeterRoute, error) {
+	scoped, err := claims.ResolveOrgScope(requestedOrgID)
+	if err != nil {
+		return nil, err
+	}
+	return s.Repository.FindMeterRoutes(ctx, scoped)
+}
+
 func (s *WaterBillService) CreateZone(ctx context.Context, claims application.Claims, cmd application.CreateZoneCommand) (application.Zone, error) {
 	if _, err := cmd.IsValid(); err != nil {
 		return application.Zone{}, err

@@ -131,6 +131,29 @@ ORDER BY t.id
 	return out, rows.Err()
 }
 
+func (s *Store) FindMeterRoutes(ctx context.Context, orgID *int64) ([]application.MeterRoute, error) {
+	const q = `
+SELECT id, org_id, name, staff_id
+FROM tw_meter_routes
+WHERE ($1::bigint IS NULL OR org_id = $1)
+ORDER BY name, id
+`
+	rows, err := s.db.Query(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]application.MeterRoute, 0)
+	for rows.Next() {
+		var r application.MeterRoute
+		if err := rows.Scan(&r.ID, &r.OrgID, &r.Name, &r.StaffID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) ListZones(ctx context.Context, orgID *int64) ([]application.Zone, error) {
 	const qZones = `
 SELECT z.id, z.org_id, z.tambon_id, COALESCE(t.tambon_name, 'ห้องแซง'), z.moo_no, z.zone_name, z.location, z.status

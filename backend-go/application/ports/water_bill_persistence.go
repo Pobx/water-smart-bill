@@ -22,6 +22,7 @@ type WaterBillRepositoryInterface interface {
 	ListPeriods(ctx context.Context, orgID *int64) ([]application.InvoicePeriod, error)
 	CreatePeriod(ctx context.Context, orgID int64, cmd application.CreateInvoicePeriodCommand) (application.InvoicePeriod, error)
 	ListMeters(ctx context.Context, orgID *int64, zoneID *int64, query string) ([]application.WaterMeter, error)
+	FindMeterRoutes(ctx context.Context, orgID *int64) ([]application.MeterRoute, error)
 	CreateMeter(ctx context.Context, orgID int64, cmd application.CreateWaterMeterCommand) (application.WaterMeter, error)
 	RecordMeterReading(ctx context.Context, orgID int64, recorderID int64, cmd application.RecordMeterReadingCommand) (application.WaterInvoice, error)
 	ListInvoices(ctx context.Context, orgID *int64, status string, periodID *int64) ([]application.WaterInvoice, error)

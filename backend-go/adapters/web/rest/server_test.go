@@ -414,4 +414,79 @@ func TestRoleScopedDemoTokensRBAC(t *testing.T) {
 	}
 }
 
+func TestGetMeterRoutes_StaffGetsOwnOrgRoutes(t *testing.T) {
+	repo := memory.NewStore()
+	staffID := int64(10)
+	repo.SeedMeterRoutes(
+		application.MeterRoute{ID: 1, OrgID: 1, Name: "สายที่ 1 (เหนือ)", StaffID: &staffID},
+		application.MeterRoute{ID: 2, OrgID: 1, Name: "สายที่ 2 (ใต้)", StaffID: nil},
+		application.MeterRoute{ID: 3, OrgID: 2, Name: "สายที่ 3 (อบต.อื่น)", StaffID: &staffID},
+	)
+	svc := services.NewWaterBillService(repo)
+	bl := blacklist.NewStore("")
+
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    bl,
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/meter-routes", nil)
+	req.Header.Set("Authorization", "Bearer valid-reader-token")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Items []application.MeterRoute `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Items) != 2 {
+		t.Fatalf("expected 2 routes for org 1, got %d: %+v", len(resp.Items), resp.Items)
+	}
+	for _, r := range resp.Items {
+		if r.OrgID != 1 {
+			t.Fatalf("expected only org_id=1 routes, got org_id=%d (%s)", r.OrgID, r.Name)
+		}
+	}
+
+	// Cross-tenant query (?org_id=2) with org1 staff token must be rejected (403 Forbidden)
+	reqCross := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/meter-routes?org_id=2", nil)
+	reqCross.Header.Set("Authorization", "Bearer valid-reader-token")
+	recCross := httptest.NewRecorder()
+	srv.ServeHTTP(recCross, reqCross)
+	if recCross.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for cross-org query, got %d: %s", recCross.Code, recCross.Body.String())
+	}
+}
+
+func TestGetMeterRoutes_UnauthorizedRole(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	bl := blacklist.NewStore("")
+
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    bl,
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/meter-routes", nil)
+	req.Header.Set("Authorization", "Bearer valid-user-token")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for user role, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+
 

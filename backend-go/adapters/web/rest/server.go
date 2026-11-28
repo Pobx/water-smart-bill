@@ -115,6 +115,7 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	api.POST("/tabwater/periods", restHandler.CreatePeriod, RequireRoles(rolesAdminOnly))
 	api.GET("/tabwater/meters", restHandler.ListMeters)
 	api.POST("/tabwater/meters", restHandler.CreateMeter, RequireRoles(rolesStaffOrAdmin))
+	api.GET("/tabwater/meter-routes", restHandler.GetMeterRoutes, RequireRoles(rolesStaffOrAdmin))
 	api.GET("/tabwater/offline-bundle", restHandler.GetOfflineBundle, RequireRoles(rolesStaffOrAdmin))
 	api.POST("/tabwater/ocr/meter-read", restHandler.ParseMeterOCR, RequireRoles(rolesStaffOrAdmin))
 	api.POST("/tabwater/readings", restHandler.RecordMeterReading, RequireRoles(rolesStaffOrAdmin))

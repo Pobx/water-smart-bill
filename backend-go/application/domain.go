@@ -62,6 +62,14 @@ func (c Claims) ResolveOrgScope(requestedOrgID *int64) (*int64, error) {
 	return c.OrgID, nil
 }
 
+// MeterRoute represents a meter-reading route assigned to an organization and optionally a staff member.
+type MeterRoute struct {
+	ID      int64  `json:"id"`
+	OrgID   int64  `json:"org_id"`
+	Name    string `json:"name"`
+	StaffID *int64 `json:"staff_id"`
+}
+
 // ResolveAvatarURL returns the uploaded avatar URL if present, or falls back to the automatic Default Avatar endpoint.
 func ResolveAvatarURL(imageURL, firstName, lastName string) string {
 	trimmed := strings.TrimSpace(imageURL)

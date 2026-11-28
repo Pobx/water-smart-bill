@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ type Store struct {
 	rateConfig  application.MeterRateConfig
 	periods     []application.InvoicePeriod
 	meters      []application.WaterMeter
+	meterRoutes []application.MeterRoute
 	invoices    []application.WaterInvoice
 	nextZoneID  int64
 	nextSubID   int64
@@ -332,6 +334,31 @@ func (s *Store) ListZones(_ context.Context, _ *int64) ([]application.Zone, erro
 	defer s.mu.RUnlock()
 	out := make([]application.Zone, len(s.zones))
 	copy(out, s.zones)
+	return out, nil
+}
+
+func (s *Store) SeedMeterRoutes(routes ...application.MeterRoute) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.meterRoutes = append([]application.MeterRoute(nil), routes...)
+}
+
+func (s *Store) FindMeterRoutes(_ context.Context, orgID *int64) ([]application.MeterRoute, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]application.MeterRoute, 0)
+	for _, r := range s.meterRoutes {
+		if orgID != nil && r.OrgID != *orgID {
+			continue
+		}
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name == out[j].Name {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Name < out[j].Name
+	})
 	return out, nil
 }
 
