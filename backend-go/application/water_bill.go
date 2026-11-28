@@ -47,25 +47,27 @@ type Organization struct {
 	LogoImg           string  `json:"org_logo_img"`
 	MeterPrefix       string  `json:"meternumbercode"`
 	CutMeterThreshold int     `json:"cutmeter_count"`
+	OverdueThreshold  int     `json:"overdue_threshold"`
 	VatRate           float64 `json:"vat"`
 }
 
 type UpsertOrganizationCommand struct {
-	Code        string  `json:"org_code"`
-	Name        string  `json:"org_name"`
-	Address     string  `json:"org_address"`
-	TambonID    int64   `json:"org_tambon_id"`
-	DistrictID  int64   `json:"org_district_id"`
-	ProvinceID  int64   `json:"org_province_id"`
-	Zipcode     string  `json:"org_zipcode"`
-	Phone       string  `json:"org_phone"`
-	DeptName    string  `json:"org_dept_name"`
-	HeadName    string  `json:"org_head_name"`
-	FinHeadName string  `json:"fin_head_name"`
-	TwHeadName  string  `json:"tw_head_name"`
-	LogoImg     string  `json:"org_logo_img"`
-	MeterPrefix string  `json:"meternumbercode"`
-	VatRate     float64 `json:"vat"`
+	Code             string  `json:"org_code"`
+	Name             string  `json:"org_name"`
+	Address          string  `json:"org_address"`
+	TambonID         int64   `json:"org_tambon_id"`
+	DistrictID       int64   `json:"org_district_id"`
+	ProvinceID       int64   `json:"org_province_id"`
+	Zipcode          string  `json:"org_zipcode"`
+	Phone            string  `json:"org_phone"`
+	DeptName         string  `json:"org_dept_name"`
+	HeadName         string  `json:"org_head_name"`
+	FinHeadName      string  `json:"fin_head_name"`
+	TwHeadName       string  `json:"tw_head_name"`
+	LogoImg          string  `json:"org_logo_img"`
+	MeterPrefix      string  `json:"meternumbercode"`
+	OverdueThreshold int     `json:"overdue_threshold"`
+	VatRate          float64 `json:"vat"`
 }
 
 func (cmd UpsertOrganizationCommand) IsValid() (bool, error) {
@@ -388,6 +390,7 @@ type WaterMeter struct {
 	Status             string  `json:"status"`
 	OweCount           int     `json:"owe_count"`
 	CutMeter           string  `json:"cutmeter"`
+	DebtNoticeID       *string `json:"debt_notice_id,omitempty"`
 	LastMeterRecording float64 `json:"last_meter_recording"`
 	RouteID            *int64  `json:"route_id,omitempty"`
 }
@@ -570,6 +573,10 @@ func (cmd PayWaterInvoiceCommand) Validate() error {
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
+func IsValidUUID(raw string) bool {
+	return uuidPattern.MatchString(strings.TrimSpace(raw))
+}
+
 type OutstandingBalance struct {
 	Invoices []WaterInvoice `json:"invoices"`
 	Total    float64        `json:"total"`
@@ -627,6 +634,87 @@ type PaymentBatchResult struct {
 	PaidAt        string         `json:"paid_at"`
 	ReceivedBy    int64          `json:"received_by"`
 	Invoices      []WaterInvoice `json:"invoices"`
+}
+
+// ---- Debt Notice & Meter Disconnection / Restoration Models -----------------
+
+const (
+	DebtNoticeStatusPending  = "pending"
+	DebtNoticeStatusSent     = "sent"
+	DebtNoticeStatusCut      = "cut"
+	DebtNoticeStatusRestored = "restored"
+)
+
+type DebtNotice struct {
+	ID                 string   `json:"id"`
+	OrgID              int64    `json:"org_id"`
+	UserID             int64    `json:"user_id"`
+	HomeownerName      string   `json:"homeowner_name,omitempty"`
+	HouseNo            string   `json:"house_no,omitempty"`
+	MeterNumber        string   `json:"meternumber,omitempty"`
+	InvoiceIDs         []int64  `json:"invoice_ids"`
+	TotalOverdueAmount float64  `json:"total_overdue_amount"`
+	Status             string   `json:"status"`
+	NoticeSentAt       string   `json:"notice_sent_at,omitempty"`
+	CutAt              string   `json:"cut_at,omitempty"`
+	CutBy              *int64   `json:"cut_by,omitempty"`
+	CutMeterReading    *float64 `json:"cut_meter_reading,omitempty"`
+	RestoredAt         string   `json:"restored_at,omitempty"`
+	RestoredBy         *int64   `json:"restored_by,omitempty"`
+	CreatedAt          string   `json:"created_at"`
+}
+
+type DebtNoticeFilter struct {
+	Status string
+	UserID *int64
+}
+
+type CreateDebtNoticeCommand struct {
+	OrgID      *int64  `json:"org_id,omitempty"`
+	UserID     int64   `json:"user_id"`
+	InvoiceIDs []int64 `json:"invoice_ids"`
+}
+
+func (cmd CreateDebtNoticeCommand) IsValid() (bool, error) {
+	if cmd.UserID <= 0 {
+		return false, fmt.Errorf("%w: user_id must be positive", ErrBadRequest)
+	}
+	if len(cmd.InvoiceIDs) == 0 {
+		return false, fmt.Errorf("%w: invoice_ids must not be empty", ErrBadRequest)
+	}
+	seen := make(map[int64]struct{}, len(cmd.InvoiceIDs))
+	for _, id := range cmd.InvoiceIDs {
+		if id <= 0 {
+			return false, fmt.Errorf("%w: invoice_ids must contain positive integers", ErrBadRequest)
+		}
+		if _, dup := seen[id]; dup {
+			return false, fmt.Errorf("%w: duplicate invoice_id %d", ErrBadRequest, id)
+		}
+		seen[id] = struct{}{}
+	}
+	return true, nil
+}
+
+func (cmd CreateDebtNoticeCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type CutMeterCommand struct {
+	MeterReading float64 `json:"meter_reading"`
+	CutBy        int64   `json:"cut_by,omitempty"`
+}
+
+func (cmd CutMeterCommand) IsValid() (bool, error) {
+	if cmd.MeterReading < 0 {
+		return false, fmt.Errorf("%w: meter_reading must be >= 0", ErrBadRequest)
+	}
+	return true, nil
+}
+
+func (cmd CutMeterCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
 }
 
 // ---- Optional AI / OCR Meter Reading Support --------------------------------

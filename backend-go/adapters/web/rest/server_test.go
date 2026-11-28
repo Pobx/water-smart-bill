@@ -53,6 +53,26 @@ func (stubVerifier) VerifyAccessToken(_ context.Context, rawToken string) (appli
 			ExpiresAt: time.Now().Add(30 * time.Minute),
 		}, nil
 	}
+	if rawToken == "valid-resident-1-token" {
+		return application.Claims{
+			JTI:       "jti-resident-1",
+			Subject:   "demo-user-1",
+			Username:  "sommai_01",
+			Roles:     []string{application.RoleUser},
+			OrgID:     &orgID,
+			ExpiresAt: time.Now().Add(30 * time.Minute),
+		}, nil
+	}
+	if rawToken == "valid-resident-2-token" {
+		return application.Claims{
+			JTI:       "jti-resident-2",
+			Subject:   "demo-user-2",
+			Username:  "malee_02",
+			Roles:     []string{application.RoleUser},
+			OrgID:     &orgID,
+			ExpiresAt: time.Now().Add(30 * time.Minute),
+		}, nil
+	}
 	if rawToken == "valid-superadmin-token" {
 		return application.Claims{
 			JTI:       "jti-superadmin-token-1",
@@ -1176,6 +1196,302 @@ func TestPayInvoicesBulk_SuperAdminCrossOrg(t *testing.T) {
 	_ = json.Unmarshal(recSuper.Body.Bytes(), &res)
 	if res.OrgID != 2 || len(res.Invoices) != 1 || res.Invoices[0].Status != "paid" {
 		t.Fatalf("unexpected super_admin bulk payment result: %+v", res)
+	}
+}
+
+func TestCreateDebtNotice_AdminOnly(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	payload := `{"user_id":1,"invoice_ids":[1]}`
+
+	// Staff role -> 403 Forbidden
+	reqStaff := httptest.NewRequest(http.MethodPost, "/api/v1/debt-notices", strings.NewReader(payload))
+	reqStaff.Header.Set("Authorization", "Bearer valid-reader-token")
+	reqStaff.Header.Set("Content-Type", "application/json")
+	recStaff := httptest.NewRecorder()
+	srv.ServeHTTP(recStaff, reqStaff)
+	if recStaff.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for staff role, got %d: %s", recStaff.Code, recStaff.Body.String())
+	}
+
+	// Admin role -> 201 Created
+	reqAdmin := httptest.NewRequest(http.MethodPost, "/api/v1/debt-notices", strings.NewReader(payload))
+	reqAdmin.Header.Set("Authorization", "Bearer valid-admin-token")
+	reqAdmin.Header.Set("Content-Type", "application/json")
+	recAdmin := httptest.NewRecorder()
+	srv.ServeHTTP(recAdmin, reqAdmin)
+	if recAdmin.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created for admin role, got %d: %s", recAdmin.Code, recAdmin.Body.String())
+	}
+
+	var notice struct {
+		ID                 string  `json:"id"`
+		OrgID              int64   `json:"org_id"`
+		UserID             int64   `json:"user_id"`
+		InvoiceIDs         []int64 `json:"invoice_ids"`
+		TotalOverdueAmount float64 `json:"total_overdue_amount"`
+		Status             string  `json:"status"`
+		NoticeSentAt       string  `json:"notice_sent_at"`
+	}
+	if err := json.Unmarshal(recAdmin.Body.Bytes(), &notice); err != nil {
+		t.Fatalf("decode debt notice: %v", err)
+	}
+	if notice.ID == "" {
+		t.Fatalf("expected non-empty debt notice id")
+	}
+	if notice.Status != "sent" {
+		t.Fatalf("expected status 'sent', got %q", notice.Status)
+	}
+	if notice.NoticeSentAt == "" {
+		t.Fatalf("expected notice_sent_at to be set")
+	}
+	if notice.UserID != 1 || len(notice.InvoiceIDs) != 1 || notice.InvoiceIDs[0] != 1 {
+		t.Fatalf("unexpected notice fields: %+v", notice)
+	}
+	if diff := notice.TotalOverdueAmount - 101.65; diff < -0.01 || diff > 0.01 {
+		t.Fatalf("expected total_overdue_amount 101.65, got %.2f", notice.TotalOverdueAmount)
+	}
+}
+
+func TestCutMeter_RequiresDebtNoticeID(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// 1. Nonexistent debt notice -> 404 Not Found
+	reqMissing := httptest.NewRequest(http.MethodPatch, "/api/v1/debt-notices/nonexistent/cut", strings.NewReader(`{"meter_reading":125.5}`))
+	reqMissing.Header.Set("Authorization", "Bearer valid-reader-token")
+	reqMissing.Header.Set("Content-Type", "application/json")
+	recMissing := httptest.NewRecorder()
+	srv.ServeHTTP(recMissing, reqMissing)
+	if recMissing.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found for nonexistent debt notice, got %d: %s", recMissing.Code, recMissing.Body.String())
+	}
+
+	// 2. Admin creates debt notice for user 1
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/debt-notices", strings.NewReader(`{"user_id":1,"invoice_ids":[1]}`))
+	createReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create debt notice failed: %d %s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(createRec.Body.Bytes(), &created)
+
+	// 3. Staff cuts meter using valid debt notice ID -> 200 OK
+	cutReq := httptest.NewRequest(http.MethodPatch, "/api/v1/debt-notices/"+created.ID+"/cut", strings.NewReader(`{"meter_reading":125.5}`))
+	cutReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	cutReq.Header.Set("Content-Type", "application/json")
+	cutRec := httptest.NewRecorder()
+	srv.ServeHTTP(cutRec, cutReq)
+	if cutRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for cut meter, got %d: %s", cutRec.Code, cutRec.Body.String())
+	}
+	var cutResp struct {
+		Status          string   `json:"status"`
+		CutMeterReading *float64 `json:"cut_meter_reading"`
+		CutAt           string   `json:"cut_at"`
+	}
+	_ = json.Unmarshal(cutRec.Body.Bytes(), &cutResp)
+	if cutResp.Status != "cut" || cutResp.CutMeterReading == nil || *cutResp.CutMeterReading != 125.5 || cutResp.CutAt == "" {
+		t.Fatalf("unexpected cut response: %+v", cutResp)
+	}
+
+	// 4. Verify meter 1 status is now 'disconnected' and cutmeter == '1'
+	metersReq := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/meters", nil)
+	metersReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	metersRec := httptest.NewRecorder()
+	srv.ServeHTTP(metersRec, metersReq)
+	if metersRec.Code != http.StatusOK {
+		t.Fatalf("list meters failed: %d", metersRec.Code)
+	}
+	var metersResp struct {
+		Items []application.WaterMeter `json:"items"`
+	}
+	_ = json.Unmarshal(metersRec.Body.Bytes(), &metersResp)
+	found := false
+	for _, m := range metersResp.Items {
+		if m.UserID == 1 {
+			found = true
+			if m.Status != "disconnected" || m.CutMeter != "1" {
+				t.Fatalf("expected meter status 'disconnected' & cutmeter '1', got status=%q cutmeter=%q", m.Status, m.CutMeter)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("meter for user 1 not found")
+	}
+}
+
+func TestRestoreMeter_BlockedWhenOutstanding(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// 1. Admin creates debt notice for user 1 (who has unpaid invoice 1)
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/debt-notices", strings.NewReader(`{"user_id":1,"invoice_ids":[1]}`))
+	createReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create debt notice failed: %d %s", createRec.Code, createRec.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(createRec.Body.Bytes(), &created)
+
+	// 2. Staff cuts meter
+	cutReq := httptest.NewRequest(http.MethodPatch, "/api/v1/debt-notices/"+created.ID+"/cut", strings.NewReader(`{"meter_reading":130}`))
+	cutReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	cutReq.Header.Set("Content-Type", "application/json")
+	cutRec := httptest.NewRecorder()
+	srv.ServeHTTP(cutRec, cutReq)
+	if cutRec.Code != http.StatusOK {
+		t.Fatalf("cut meter failed: %d %s", cutRec.Code, cutRec.Body.String())
+	}
+
+	// 3. Restore while invoice 1 is still unpaid -> 400 Bad Request "outstanding balance remaining"
+	restoreBlockedReq := httptest.NewRequest(http.MethodPatch, "/api/v1/debt-notices/"+created.ID+"/restore", nil)
+	restoreBlockedReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	restoreBlockedRec := httptest.NewRecorder()
+	srv.ServeHTTP(restoreBlockedRec, restoreBlockedReq)
+	if restoreBlockedRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when outstanding balance remains, got %d: %s", restoreBlockedRec.Code, restoreBlockedRec.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(restoreBlockedRec.Body.String()), "outstanding balance remaining") {
+		t.Fatalf("expected error body to contain 'outstanding balance remaining', got: %s", restoreBlockedRec.Body.String())
+	}
+
+	// 4. Pay invoice 1 so user 1 has 0 unpaid invoices
+	payReq := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/invoices/1/pay", strings.NewReader(`{"payment_method":"cash"}`))
+	payReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	payReq.Header.Set("Content-Type", "application/json")
+	payRec := httptest.NewRecorder()
+	srv.ServeHTTP(payRec, payReq)
+	if payRec.Code != http.StatusOK {
+		t.Fatalf("pay invoice 1 failed: %d %s", payRec.Code, payRec.Body.String())
+	}
+
+	// 5. Restore after payment -> 200 OK & meter status back to 'active'
+	restoreOKReq := httptest.NewRequest(http.MethodPatch, "/api/v1/debt-notices/"+created.ID+"/restore", nil)
+	restoreOKReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	restoreOKRec := httptest.NewRecorder()
+	srv.ServeHTTP(restoreOKRec, restoreOKReq)
+	if restoreOKRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for restore after payment, got %d: %s", restoreOKRec.Code, restoreOKRec.Body.String())
+	}
+	var restoredResp struct {
+		Status     string `json:"status"`
+		RestoredAt string `json:"restored_at"`
+	}
+	_ = json.Unmarshal(restoreOKRec.Body.Bytes(), &restoredResp)
+	if restoredResp.Status != "restored" || restoredResp.RestoredAt == "" {
+		t.Fatalf("unexpected restore response: %+v", restoredResp)
+	}
+
+	// Verify meter 1 status is 'active' and cutmeter == '0'
+	metersReq := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/meters", nil)
+	metersReq.Header.Set("Authorization", "Bearer valid-reader-token")
+	metersRec := httptest.NewRecorder()
+	srv.ServeHTTP(metersRec, metersReq)
+	var metersResp struct {
+		Items []application.WaterMeter `json:"items"`
+	}
+	_ = json.Unmarshal(metersRec.Body.Bytes(), &metersResp)
+	for _, m := range metersResp.Items {
+		if m.UserID == 1 {
+			if m.Status != "active" || m.CutMeter != "0" {
+				t.Fatalf("expected meter status 'active' & cutmeter '0' after restore, got status=%q cutmeter=%q", m.Status, m.CutMeter)
+			}
+		}
+	}
+}
+
+func TestGetUserDebtNotices_ResidentSeesOwnOnly(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// Admin creates a debt notice for user 1
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/debt-notices", strings.NewReader(`{"user_id":1,"invoice_ids":[1]}`))
+	createReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create debt notice failed: %d %s", createRec.Code, createRec.Body.String())
+	}
+
+	// Resident 1 can view own debt notices -> 200 OK with 1 notice
+	reqOwn := httptest.NewRequest(http.MethodGet, "/api/v1/users/1/debt-notices", nil)
+	reqOwn.Header.Set("Authorization", "Bearer valid-resident-1-token")
+	recOwn := httptest.NewRecorder()
+	srv.ServeHTTP(recOwn, reqOwn)
+	if recOwn.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for resident viewing own debt notices, got %d: %s", recOwn.Code, recOwn.Body.String())
+	}
+	var ownResp struct {
+		Items []struct {
+			ID     string `json:"id"`
+			UserID int64  `json:"user_id"`
+			Status string `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(recOwn.Body.Bytes(), &ownResp); err != nil {
+		t.Fatalf("decode own debt notices: %v", err)
+	}
+	if len(ownResp.Items) != 1 || ownResp.Items[0].UserID != 1 {
+		t.Fatalf("expected 1 debt notice for user 1, got %+v", ownResp.Items)
+	}
+
+	// Resident 2 attempting to view user 1's debt notices -> 403 Forbidden
+	reqOther := httptest.NewRequest(http.MethodGet, "/api/v1/users/1/debt-notices", nil)
+	reqOther.Header.Set("Authorization", "Bearer valid-resident-2-token")
+	recOther := httptest.NewRecorder()
+	srv.ServeHTTP(recOther, reqOther)
+	if recOther.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for resident 2 viewing user 1 debt notices, got %d: %s", recOther.Code, recOther.Body.String())
+	}
+
+	// Staff can view user 1's debt notices -> 200 OK
+	reqStaff := httptest.NewRequest(http.MethodGet, "/api/v1/users/1/debt-notices", nil)
+	reqStaff.Header.Set("Authorization", "Bearer valid-reader-token")
+	recStaff := httptest.NewRecorder()
+	srv.ServeHTTP(recStaff, reqStaff)
+	if recStaff.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for staff viewing user 1 debt notices, got %d: %s", recStaff.Code, recStaff.Body.String())
 	}
 }
 

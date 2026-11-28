@@ -576,6 +576,86 @@ func (h *WaterBillRestHandler) PayInvoicesBulk(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
+func (h *WaterBillRestHandler) CreateDebtNotice(c echo.Context) error {
+	reqDTO := dto.NewCreateDebtNoticeDTO()
+	if err := reqDTO.Bind(c); err != nil {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid JSON body")
+	}
+	cmd, err := reqDTO.ConvertToEntity()
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	notice, err := h.Service.CreateDebtNotice(c.Request().Context(), GetClaims(c), cmd)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusCreated, notice)
+}
+
+func (h *WaterBillRestHandler) ListDebtNotices(c echo.Context) error {
+	var userID *int64
+	if rawU := strings.TrimSpace(c.QueryParam("user_id")); rawU != "" {
+		parsed, err := strconv.ParseInt(rawU, 10, 64)
+		if err != nil || parsed <= 0 {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid user_id parameter")
+		}
+		userID = &parsed
+	}
+	filter := application.DebtNoticeFilter{
+		Status: c.QueryParam("status"),
+		UserID: userID,
+	}
+	items, err := h.Service.ListDebtNotices(c.Request().Context(), GetClaims(c), filter)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *WaterBillRestHandler) CutMeter(c echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid debt notice id")
+	}
+	reqDTO := dto.NewCutMeterDTO()
+	if err := reqDTO.Bind(c); err != nil {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid JSON body")
+	}
+	cmd, err := reqDTO.ConvertToEntity()
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	updated, err := h.Service.CutMeter(c.Request().Context(), GetClaims(c), id, cmd)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, updated)
+}
+
+func (h *WaterBillRestHandler) RestoreMeter(c echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid debt notice id")
+	}
+	updated, err := h.Service.RestoreMeter(c.Request().Context(), GetClaims(c), id)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, updated)
+}
+
+func (h *WaterBillRestHandler) GetUserDebtNotices(c echo.Context) error {
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid user id")
+	}
+	items, err := h.Service.GetUserDebtNotices(c.Request().Context(), GetClaims(c), userID)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
 func (h *WaterBillRestHandler) GetCollectionReport(c echo.Context) error {
 	var periodID *int64
 	if rawP := c.QueryParam("period_id"); rawP != "" {

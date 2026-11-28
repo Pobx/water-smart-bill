@@ -437,3 +437,51 @@ func (d *BulkPaymentDTO) ConvertToEntity() (application.BulkPaymentCommand, erro
 	}
 	return cmd, nil
 }
+
+type CreateDebtNoticeDTO struct {
+	OrgID      *int64  `json:"org_id,omitempty"`
+	UserID     int64   `json:"user_id"`
+	InvoiceIDs []int64 `json:"invoice_ids"`
+}
+
+func NewCreateDebtNoticeDTO() *CreateDebtNoticeDTO {
+	return &CreateDebtNoticeDTO{}
+}
+
+func (d *CreateDebtNoticeDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *CreateDebtNoticeDTO) ConvertToEntity() (application.CreateDebtNoticeCommand, error) {
+	cmd := application.CreateDebtNoticeCommand{
+		OrgID:      d.OrgID,
+		UserID:     d.UserID,
+		InvoiceIDs: d.InvoiceIDs,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.CreateDebtNoticeCommand{}, err
+	}
+	return cmd, nil
+}
+
+type CutMeterDTO struct {
+	MeterReading float64 `json:"meter_reading"`
+}
+
+func NewCutMeterDTO() *CutMeterDTO {
+	return &CutMeterDTO{}
+}
+
+func (d *CutMeterDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *CutMeterDTO) ConvertToEntity() (application.CutMeterCommand, error) {
+	cmd := application.CutMeterCommand{
+		MeterReading: d.MeterReading,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.CutMeterCommand{}, err
+	}
+	return cmd, nil
+}

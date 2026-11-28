@@ -128,6 +128,11 @@ func toClaims(tok jwt.Token, rawToken string) (application.Claims, error) {
 		}
 		c.OrgID = &id
 	}
+	if raw, ok := tok.Get("user_id"); ok && raw != nil {
+		if id, err := parseOrgID(raw); err == nil && id > 0 {
+			c.UserID = &id
+		}
+	}
 	return c, nil
 }
 

@@ -33,7 +33,7 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"*"},
-		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization, "Idempotency-Key"},
 	}))
 
@@ -98,6 +98,7 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	rolesAdminOnly := []string{application.RoleAdmin, application.RoleSuperAdmin}
 	rolesStaffOrAdmin := []string{application.RoleTabwaterStaff, application.RoleAdmin, application.RoleSuperAdmin}
 	rolesFinanceOrAdmin := []string{application.RoleFinanceStaff, application.RoleAdmin, application.RoleSuperAdmin}
+	rolesStaffAdminOrUser := []string{application.RoleTabwaterStaff, application.RoleAdmin, application.RoleSuperAdmin, application.RoleUser}
 
 	api.GET("/organizations", restHandler.GetOrganization)
 	api.POST("/organizations", restHandler.UpsertOrganization, RequireRoles(rolesAdminOnly))
@@ -128,6 +129,13 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	api.POST("/tabwater/payments/bulk", restHandler.PayInvoicesBulk, RequireRoles(rolesFinanceOrAdmin))
 	api.GET("/tabwater/reports/collections", restHandler.GetCollectionReport, RequireRoles(rolesFinanceOrAdmin))
 	api.GET("/water-bills/reports/collections", restHandler.GetCollectionReport, RequireRoles(rolesFinanceOrAdmin))
+
+	// Debt Notices & Meter Disconnection / Restoration
+	api.POST("/debt-notices", restHandler.CreateDebtNotice, RequireRoles(rolesAdminOnly))
+	api.GET("/debt-notices", restHandler.ListDebtNotices, RequireRoles(rolesStaffOrAdmin))
+	api.PATCH("/debt-notices/:id/cut", restHandler.CutMeter, RequireRoles(rolesStaffOrAdmin))
+	api.PATCH("/debt-notices/:id/restore", restHandler.RestoreMeter, RequireRoles(rolesStaffOrAdmin))
+	api.GET("/users/:user_id/debt-notices", restHandler.GetUserDebtNotices, RequireRoles(rolesStaffAdminOrUser))
 
 	return e
 }
@@ -209,9 +217,11 @@ func buildDemoClaims(rawToken string) application.Claims {
 		base.Username = "finance_naree"
 		base.Roles = []string{application.RoleFinanceStaff}
 	case strings.HasPrefix(rawToken, "demo-jwt-role-user-"):
+		uid := int64(1)
 		base.Subject = "demo-user-1"
 		base.Username = "resident_sommai"
 		base.Roles = []string{application.RoleUser}
+		base.UserID = &uid
 	default:
 		base.Subject = "demo-staff-1"
 		base.Username = "somchai_staff"

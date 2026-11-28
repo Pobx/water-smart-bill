@@ -328,6 +328,126 @@ func (s *WaterBillService) PayInvoicesBulk(ctx context.Context, claims applicati
 	return s.Repository.PayInvoicesBulk(ctx, scoped, cmd)
 }
 
+func (s *WaterBillService) CreateDebtNotice(ctx context.Context, claims application.Claims, cmd application.CreateDebtNoticeCommand) (application.DebtNotice, error) {
+	if _, err := cmd.IsValid(); err != nil {
+		return application.DebtNotice{}, err
+	}
+	scoped, err := claims.ResolveOrgScope(cmd.OrgID)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	return s.Repository.InsertDebtNotice(ctx, scoped, cmd)
+}
+
+func (s *WaterBillService) ListDebtNotices(ctx context.Context, claims application.Claims, filter application.DebtNoticeFilter) ([]application.DebtNotice, error) {
+	status := strings.ToLower(strings.TrimSpace(filter.Status))
+	if status != "" &&
+		status != application.DebtNoticeStatusPending &&
+		status != application.DebtNoticeStatusSent &&
+		status != application.DebtNoticeStatusCut &&
+		status != application.DebtNoticeStatusRestored {
+		return nil, fmt.Errorf("%w: invalid debt notice status", application.ErrBadRequest)
+	}
+	filter.Status = status
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.Repository.FindDebtNotices(ctx, scoped, filter)
+	if err != nil {
+		return nil, err
+	}
+	if items == nil {
+		return []application.DebtNotice{}, nil
+	}
+	return items, nil
+}
+
+func (s *WaterBillService) GetUserDebtNotices(ctx context.Context, claims application.Claims, userID int64) ([]application.DebtNotice, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("%w: invalid user id", application.ErrBadRequest)
+	}
+	if !claims.HasAnyRole(application.RoleTabwaterStaff, application.RoleAdmin, application.RoleSuperAdmin) {
+		callerID, ok := claims.ResolvedUserID()
+		if !ok || callerID != userID {
+			return nil, fmt.Errorf("%w: residents can only view their own debt notices", application.ErrForbidden)
+		}
+	}
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return nil, err
+	}
+	uid := userID
+	items, err := s.Repository.FindDebtNotices(ctx, scoped, application.DebtNoticeFilter{UserID: &uid})
+	if err != nil {
+		return nil, err
+	}
+	if items == nil {
+		return []application.DebtNotice{}, nil
+	}
+	return items, nil
+}
+
+func (s *WaterBillService) CutMeter(ctx context.Context, claims application.Claims, debtNoticeID string, cmd application.CutMeterCommand) (application.DebtNotice, error) {
+	id := strings.TrimSpace(debtNoticeID)
+	if !application.IsValidUUID(id) {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.DebtNotice{}, err
+	}
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	notice, err := s.Repository.FindDebtNoticeByID(ctx, scoped, id)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	if notice.Status != application.DebtNoticeStatusSent && notice.Status != application.DebtNoticeStatusPending {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice status %q cannot be cut", application.ErrConflict, notice.Status)
+	}
+	if cmd.CutBy <= 0 {
+		if uid, ok := claims.ResolvedUserID(); ok {
+			cmd.CutBy = uid
+		} else {
+			cmd.CutBy = 1
+		}
+	}
+	return s.Repository.CutMeterByDebtNotice(ctx, scoped, id, cmd)
+}
+
+func (s *WaterBillService) RestoreMeter(ctx context.Context, claims application.Claims, debtNoticeID string) (application.DebtNotice, error) {
+	id := strings.TrimSpace(debtNoticeID)
+	if !application.IsValidUUID(id) {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	notice, err := s.Repository.FindDebtNoticeByID(ctx, scoped, id)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	if notice.Status != application.DebtNoticeStatusCut {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice status %q cannot be restored", application.ErrConflict, notice.Status)
+	}
+	noticeOrgID := notice.OrgID
+	unpaid, err := s.Repository.FindUnpaidInvoices(ctx, &noticeOrgID, notice.UserID)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	if len(unpaid) > 0 {
+		return application.DebtNotice{}, fmt.Errorf("%w: outstanding balance remaining", application.ErrBadRequest)
+	}
+	restoredBy := int64(1)
+	if uid, ok := claims.ResolvedUserID(); ok {
+		restoredBy = uid
+	}
+	return s.Repository.RestoreMeterByDebtNotice(ctx, scoped, id, restoredBy)
+}
+
 func (s *WaterBillService) GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {
 	return s.Repository.GetLiffPortalData(ctx, lineUserID, meterNumber, houseNo)
 }
