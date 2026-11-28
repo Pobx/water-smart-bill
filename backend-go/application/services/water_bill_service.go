@@ -132,6 +132,25 @@ func (s *WaterBillService) SaveRateConfig(ctx context.Context, claims applicatio
 	return s.Repository.SaveRateConfig(ctx, orgID, cmd)
 }
 
+func (s *WaterBillService) UpdateRateConfig(ctx context.Context, claims application.Claims, configID int64, cmd application.UpdateRateConfigCommand) (application.MeterRateConfig, error) {
+	if configID <= 0 {
+		return application.MeterRateConfig{}, fmt.Errorf("%w: invalid rate config id", application.ErrBadRequest)
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	normalizedTiers, err := application.ValidateRateTiers(cmd.Tiers)
+	if err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	cmd.Tiers = normalizedTiers
+	scoped, err := claims.ResolveOrgScope(nil)
+	if err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	return s.Repository.UpdateRateConfig(ctx, scoped, configID, cmd)
+}
+
 func (s *WaterBillService) ListPeriods(ctx context.Context, claims application.Claims) ([]application.InvoicePeriod, error) {
 	_, scoped, err := resolveTenantOrgID(claims, nil)
 	if err != nil {

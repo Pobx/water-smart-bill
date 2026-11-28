@@ -1,6 +1,7 @@
 import { NumericInput, SearchableSelect } from '@/shared/ui'
 import type { Homeowner } from '@/shared/types/waterSmartBill'
 import type { useTariffsMeters } from './useTariffsMeters'
+import { TierEditor } from './TierEditor'
 
 export interface TariffsMetersScreenProps extends ReturnType<typeof useTariffsMeters> {
   vatRate: number
@@ -11,9 +12,11 @@ export function TariffsMetersScreen({
   vatRate,
   homeowners,
   reserveFee,
-  setReserveFee,
   tiers,
-  setTiers,
+  isSavingRateConfig,
+  rateConfigError,
+  rateConfigSuccess,
+  handleSaveRateConfig,
   newPeriodName,
   setNewPeriodName,
   meters,
@@ -37,99 +40,15 @@ export function TariffsMetersScreen({
           ตาราง tw_meter_type_rate_configs & tw_meter_type_rate_tiers
         </p>
 
-        <div className="mb-4 grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">
-              ค่ารักษามาตรวัดน้ำ (บาท/เดือน)
-            </label>
-            <NumericInput
-              aria-label="ค่ารักษามาตรวัดน้ำ"
-              className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm"
-              value={reserveFee}
-              decimalScale={2}
-              onValueChange={(_, floatVal) => setReserveFee(floatVal ?? 0)}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">ภาษีมูลค่าเพิ่ม VAT (%)</label>
-            <NumericInput
-              aria-label="ภาษีมูลค่าเพิ่ม VAT"
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm"
-              value={vatRate}
-              readOnly
-            />
-          </div>
-        </div>
-
-        {/* ตารางอัตราค่าน้ำ (Desktop: md ขึ้นไป) */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500">
-              <tr>
-                <th className="px-3 py-2">ขั้นที่</th>
-                <th className="px-3 py-2">ช่วงหน่วยน้ำ (m³)</th>
-                <th className="px-3 py-2">ราคา/หน่วย (บาท)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {tiers.map((t, idx) => (
-                <tr key={t.tier_order}>
-                  <td className="px-3 py-2 font-mono font-bold">Tier #{t.tier_order}</td>
-                  <td className="px-3 py-2 text-slate-700">
-                    {t.min_units} - {t.max_units ?? 'ขึ้นไป'} หน่วย
-                  </td>
-                  <td className="px-3 py-2">
-                    <NumericInput
-                      aria-label={`ราคาต่อหน่วย Tier ${t.tier_order}`}
-                      className="w-24 rounded border border-slate-200 px-2 py-1 font-mono text-sm"
-                      value={t.rate_per_unit}
-                      decimalScale={2}
-                      onValueChange={(_, floatVal) => {
-                        const updated = [...tiers]
-                        updated[idx] = { ...t, rate_per_unit: floatVal ?? 0 }
-                        setTiers(updated)
-                      }}
-                    />{' '}
-                    ฿
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* รายการอัตราค่าน้ำแบบการ์ด (Mobile: เล็กกว่า md) */}
-        <div className="block md:hidden space-y-2.5">
-          {tiers.map((t, idx) => (
-            <div
-              key={t.tier_order}
-              className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 flex items-center justify-between gap-3"
-            >
-              <div>
-                <span className="font-mono text-xs font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
-                  Tier #{t.tier_order}
-                </span>
-                <p className="text-xs text-slate-600 mt-1">
-                  {t.min_units} - {t.max_units ?? 'ขึ้นไป'} หน่วย
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <NumericInput
-                  aria-label={`ราคาต่อหน่วยมือถือ Tier ${t.tier_order}`}
-                  className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 font-mono text-sm text-right font-bold text-sky-700 shadow-2xs"
-                  value={t.rate_per_unit}
-                  decimalScale={2}
-                  onValueChange={(_, floatVal) => {
-                    const updated = [...tiers]
-                    updated[idx] = { ...t, rate_per_unit: floatVal ?? 0 }
-                    setTiers(updated)
-                  }}
-                />
-                <span className="text-xs font-medium text-slate-500">฿/หน่วย</span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <TierEditor
+          vatRate={vatRate}
+          reserveFee={reserveFee}
+          tiers={tiers}
+          onSave={handleSaveRateConfig}
+          isSaving={isSavingRateConfig}
+          errorMessage={rateConfigError}
+          successMessage={rateConfigSuccess}
+        />
 
         {/* เปิดรอบบิล */}
         <div className="mt-5 border-t border-slate-100 pt-4">

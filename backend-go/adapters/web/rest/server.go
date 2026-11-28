@@ -111,6 +111,7 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	// Tariffs, Periods, Meters & Readings
 	api.GET("/tabwater/rate-configs", restHandler.GetActiveRateConfig)
 	api.POST("/tabwater/rate-configs", restHandler.SaveRateConfig, RequireRoles(rolesAdminOnly))
+	api.PUT("/tabwater/rate-configs/:id", restHandler.UpdateRateConfig, RequireRoles(rolesAdminOnly))
 	api.GET("/tabwater/periods", restHandler.ListPeriods)
 	api.POST("/tabwater/periods", restHandler.CreatePeriod, RequireRoles(rolesAdminOnly))
 	api.GET("/tabwater/meters", restHandler.ListMeters)

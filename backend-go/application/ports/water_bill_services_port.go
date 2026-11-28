@@ -18,6 +18,7 @@ type WaterBillServiceInterface interface {
 	UpdateHomeownerAvatar(ctx context.Context, claims application.Claims, userID int64, avatarURL string) (application.HomeownerUser, error)
 	GetActiveRateConfig(ctx context.Context, claims application.Claims) (application.MeterRateConfig, error)
 	SaveRateConfig(ctx context.Context, claims application.Claims, cmd application.SaveRateConfigCommand) (application.MeterRateConfig, error)
+	UpdateRateConfig(ctx context.Context, claims application.Claims, configID int64, cmd application.UpdateRateConfigCommand) (application.MeterRateConfig, error)
 	ListPeriods(ctx context.Context, claims application.Claims) ([]application.InvoicePeriod, error)
 	CreatePeriod(ctx context.Context, claims application.Claims, cmd application.CreateInvoicePeriodCommand) (application.InvoicePeriod, error)
 	ListMeters(ctx context.Context, claims application.Claims, zoneID *int64, query string) ([]application.WaterMeter, error)

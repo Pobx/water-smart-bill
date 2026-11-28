@@ -64,7 +64,11 @@ export const MENU_ITEMS: MenuItem[] = [
 export function App() {
   const auth = useAuth()
   const masterData = useMasterData()
-  const tariffsMeters = useTariffsMeters(masterData.homeowners)
+  const tariffsMeters = useTariffsMeters(
+    masterData.homeowners,
+    auth.jwtToken,
+    (vat) => masterData.setOrgInfo((prev) => ({ ...prev, vat }))
+  )
   const liffPortal = useLiffPortal(tariffsMeters.meters)
   const fieldReader = useFieldReader({
     orgInfo: masterData.orgInfo,

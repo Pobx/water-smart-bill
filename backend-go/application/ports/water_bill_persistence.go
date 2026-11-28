@@ -19,6 +19,7 @@ type WaterBillRepositoryInterface interface {
 	UpdateHomeownerAvatar(ctx context.Context, orgID *int64, userID int64, avatarURL string) (application.HomeownerUser, error)
 	GetActiveRateConfig(ctx context.Context, orgID *int64) (application.MeterRateConfig, error)
 	SaveRateConfig(ctx context.Context, orgID int64, cmd application.SaveRateConfigCommand) (application.MeterRateConfig, error)
+	UpdateRateConfig(ctx context.Context, orgID *int64, configID int64, cmd application.UpdateRateConfigCommand) (application.MeterRateConfig, error)
 	ListPeriods(ctx context.Context, orgID *int64) ([]application.InvoicePeriod, error)
 	CreatePeriod(ctx context.Context, orgID int64, cmd application.CreateInvoicePeriodCommand) (application.InvoicePeriod, error)
 	ListMeters(ctx context.Context, orgID *int64, zoneID *int64, query string) ([]application.WaterMeter, error)

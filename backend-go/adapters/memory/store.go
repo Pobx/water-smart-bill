@@ -517,6 +517,38 @@ func (s *Store) SaveRateConfig(_ context.Context, _ int64, cmd application.SaveR
 	return s.rateConfig, nil
 }
 
+func (s *Store) UpdateRateConfig(_ context.Context, orgID *int64, configID int64, cmd application.UpdateRateConfigCommand) (application.MeterRateConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rateConfig.ID != configID {
+		return application.MeterRateConfig{}, application.ErrNotFound
+	}
+	if orgID != nil && s.rateConfig.OrgID != *orgID {
+		return application.MeterRateConfig{}, application.ErrForbidden
+	}
+	if cmd.PeriodID != nil {
+		for _, p := range s.periods {
+			if p.ID == *cmd.PeriodID && (orgID == nil || p.OrgID == *orgID) {
+				status := strings.ToLower(strings.TrimSpace(p.Status))
+				if status == "closed" || status == "finalized" {
+					return application.MeterRateConfig{}, fmt.Errorf("%w: cannot edit rate config for a finalized period", application.ErrConflict)
+				}
+				break
+			}
+		}
+	}
+	if strings.TrimSpace(cmd.MeterTypeName) != "" {
+		s.rateConfig.MeterTypeName = strings.TrimSpace(cmd.MeterTypeName)
+	}
+	s.rateConfig.ReserveFee = cmd.ReserveFee
+	s.rateConfig.VatPercent = cmd.VatPercent
+	s.org.VatRate = cmd.VatPercent
+	tiers := make([]application.RateTier, len(cmd.Tiers))
+	copy(tiers, cmd.Tiers)
+	s.rateConfig.Tiers = tiers
+	return s.rateConfig, nil
+}
+
 func (s *Store) ListPeriods(_ context.Context, _ *int64) ([]application.InvoicePeriod, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

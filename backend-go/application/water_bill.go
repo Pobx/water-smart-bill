@@ -1,6 +1,7 @@
 package application
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -211,6 +212,87 @@ func (cmd SaveRateConfigCommand) IsValid() (bool, error) {
 }
 
 func (cmd SaveRateConfigCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type UpdateRateConfigCommand struct {
+	PeriodID      *int64     `json:"period_id,omitempty"`
+	MeterTypeName string     `json:"meter_type_name,omitempty"`
+	ReserveFee    float64    `json:"reserve_fee"`
+	VatPercent    float64    `json:"vat"`
+	Tiers         []RateTier `json:"tiers"`
+}
+
+// ValidateRateTiers validates and sorts progressive water rate tiers,
+// rejecting negative values, invalid ranges, gaps, or overlaps.
+func ValidateRateTiers(tiers []RateTier) ([]RateTier, error) {
+	if len(tiers) == 0 {
+		return nil, fmt.Errorf("%w: at least one tier is required", ErrBadRequest)
+	}
+	sorted := make([]RateTier, len(tiers))
+	copy(sorted, tiers)
+
+	for _, t := range sorted {
+		if t.MinUnits < 0 {
+			return nil, fmt.Errorf("%w: tier min_units must be >= 0", ErrBadRequest)
+		}
+		if t.RatePerUnit < 0 {
+			return nil, fmt.Errorf("%w: tier rate_per_unit must be >= 0", ErrBadRequest)
+		}
+		if t.MaxUnits != nil && *t.MaxUnits < t.MinUnits {
+			return nil, fmt.Errorf("%w: tier max_units must be >= min_units", ErrBadRequest)
+		}
+	}
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].MinUnits != sorted[j].MinUnits {
+			return sorted[i].MinUnits < sorted[j].MinUnits
+		}
+		if sorted[i].MaxUnits == nil {
+			return false
+		}
+		if sorted[j].MaxUnits == nil {
+			return true
+		}
+		return *sorted[i].MaxUnits < *sorted[j].MaxUnits
+	})
+
+	for i := 0; i < len(sorted)-1; i++ {
+		prev := sorted[i]
+		next := sorted[i+1]
+		if prev.MaxUnits == nil {
+			return nil, fmt.Errorf("%w: tier overlap detected", ErrBadRequest)
+		}
+		if *prev.MaxUnits+1 < next.MinUnits {
+			return nil, fmt.Errorf("%w: tier gap detected", ErrBadRequest)
+		}
+		if *prev.MaxUnits+1 > next.MinUnits {
+			return nil, fmt.Errorf("%w: tier overlap detected", ErrBadRequest)
+		}
+	}
+
+	for i := range sorted {
+		sorted[i].TierOrder = i + 1
+	}
+
+	return sorted, nil
+}
+
+func (cmd UpdateRateConfigCommand) IsValid() (bool, error) {
+	if cmd.VatPercent < 0 || cmd.VatPercent > 100 {
+		return false, fmt.Errorf("%w: vat must be between 0 and 100", ErrBadRequest)
+	}
+	if cmd.ReserveFee < 0 {
+		return false, fmt.Errorf("%w: reserve_fee must be >= 0", ErrBadRequest)
+	}
+	if _, err := ValidateRateTiers(cmd.Tiers); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (cmd UpdateRateConfigCommand) Validate() error {
 	_, err := cmd.IsValid()
 	return err
 }

@@ -609,5 +609,183 @@ func TestListReadings_FilterByStatus(t *testing.T) {
 	}
 }
 
+func TestUpdateRateConfig_ValidTiers(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	payload := `{
+		"vat": 7.5,
+		"reserve_fee": 15,
+		"tiers": [
+			{"from": 11, "to": 50, "rate": 80},
+			{"from": 0, "to": 10, "rate": 50}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tabwater/rate-configs/1", strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for valid tier update, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var updated application.MeterRateConfig
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("failed to decode updated rate config: %v", err)
+	}
+	if updated.VatPercent != 7.5 {
+		t.Fatalf("expected vat=7.5, got %v", updated.VatPercent)
+	}
+	if updated.ReserveFee != 15 {
+		t.Fatalf("expected reserve_fee=15, got %v", updated.ReserveFee)
+	}
+	if len(updated.Tiers) != 2 {
+		t.Fatalf("expected 2 tiers, got %d", len(updated.Tiers))
+	}
+	// Verify tiers are sorted by min_units ascending and tier_order normalized
+	if updated.Tiers[0].MinUnits != 0 || updated.Tiers[0].MaxUnits == nil || *updated.Tiers[0].MaxUnits != 10 || updated.Tiers[0].RatePerUnit != 50 || updated.Tiers[0].TierOrder != 1 {
+		t.Fatalf("unexpected first tier: %+v", updated.Tiers[0])
+	}
+	if updated.Tiers[1].MinUnits != 11 || updated.Tiers[1].MaxUnits == nil || *updated.Tiers[1].MaxUnits != 50 || updated.Tiers[1].RatePerUnit != 80 || updated.Tiers[1].TierOrder != 2 {
+		t.Fatalf("unexpected second tier: %+v", updated.Tiers[1])
+	}
+}
+
+func TestUpdateRateConfig_GapInTiers(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	payload := `{
+		"vat": 7,
+		"reserve_fee": 10,
+		"tiers": [
+			{"from": 0, "to": 5, "rate": 5},
+			{"from": 10, "to": 50, "rate": 8}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tabwater/rate-configs/1", strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for tier gap, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "tier gap detected") {
+		t.Fatalf("expected error detail to contain 'tier gap detected', got: %s", rec.Body.String())
+	}
+}
+
+func TestUpdateRateConfig_OverlapInTiers(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	payload := `{
+		"vat": 7,
+		"reserve_fee": 10,
+		"tiers": [
+			{"min_units": 0, "max_units": 10, "rate_per_unit": 5},
+			{"min_units": 10, "max_units": 50, "rate_per_unit": 8}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tabwater/rate-configs/1", strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for tier overlap, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "tier overlap detected") {
+		t.Fatalf("expected error detail to contain 'tier overlap detected', got: %s", rec.Body.String())
+	}
+}
+
+func TestUpdateRateConfig_NonAdminForbidden(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	payload := `{
+		"vat": 7,
+		"reserve_fee": 10,
+		"tiers": [
+			{"from": 0, "to": 10, "rate": 5}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tabwater/rate-configs/1", strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer valid-reader-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for staff role, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateRateConfig_FinalizedPeriodConflict(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// Period 2 is seeded as status "closed" in memory.NewStore()
+	payload := `{
+		"period_id": 2,
+		"vat": 7,
+		"reserve_fee": 10,
+		"tiers": [
+			{"from": 0, "to": 10, "rate": 5}
+		]
+	}`
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tabwater/rate-configs/1", strings.NewReader(payload))
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict for finalized period, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+
 
 

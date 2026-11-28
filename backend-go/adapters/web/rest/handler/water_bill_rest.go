@@ -47,6 +47,8 @@ func MapDomainError(c echo.Context, err error) error {
 		return WriteProblem(c, http.StatusNotFound, "Not Found", err.Error())
 	case errors.Is(err, application.ErrBadRequest):
 		return WriteProblem(c, http.StatusBadRequest, "Bad Request", err.Error())
+	case errors.Is(err, application.ErrConflict):
+		return WriteProblem(c, http.StatusConflict, "Conflict", err.Error())
 	default:
 		return WriteProblem(c, http.StatusInternalServerError, "Internal Server Error", err.Error())
 	}
@@ -317,6 +319,26 @@ func (h *WaterBillRestHandler) SaveRateConfig(c echo.Context) error {
 		return MapDomainError(c, err)
 	}
 	rc, err := h.Service.SaveRateConfig(c.Request().Context(), GetClaims(c), cmd)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, rc)
+}
+
+func (h *WaterBillRestHandler) UpdateRateConfig(c echo.Context) error {
+	configID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || configID <= 0 {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid rate config id")
+	}
+	reqDTO := dto.NewUpdateRateConfigDTO()
+	if err := reqDTO.Bind(c); err != nil {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid JSON body")
+	}
+	cmd, err := reqDTO.ConvertToEntity()
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	rc, err := h.Service.UpdateRateConfig(c.Request().Context(), GetClaims(c), configID, cmd)
 	if err != nil {
 		return MapDomainError(c, err)
 	}

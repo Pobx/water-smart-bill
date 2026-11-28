@@ -398,6 +398,65 @@ VALUES ($1, $2, $3, $4, $5, $6)
 	return s.GetActiveRateConfig(ctx, &orgID)
 }
 
+func (s *Store) UpdateRateConfig(ctx context.Context, orgID *int64, configID int64, cmd application.UpdateRateConfigCommand) (application.MeterRateConfig, error) {
+	const qCheck = `
+SELECT rc.id, rc.org_id, rc.meter_type_id_fk
+FROM tw_meter_type_rate_configs rc
+WHERE rc.id = $1 AND ($2::bigint IS NULL OR rc.org_id = $2)
+`
+	var foundID, foundOrgID, meterTypeID int64
+	if err := s.db.QueryRow(ctx, qCheck, configID, orgID).Scan(&foundID, &foundOrgID, &meterTypeID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return application.MeterRateConfig{}, application.ErrNotFound
+		}
+		return application.MeterRateConfig{}, err
+	}
+
+	if cmd.PeriodID != nil {
+		var status string
+		err := s.db.QueryRow(ctx, `SELECT status FROM invoice_period WHERE id = $1 AND org_id = $2`, *cmd.PeriodID, foundOrgID).Scan(&status)
+		if err == nil {
+			normalized := strings.ToLower(strings.TrimSpace(status))
+			if normalized == "closed" || normalized == "finalized" {
+				return application.MeterRateConfig{}, fmt.Errorf("%w: cannot edit rate config for a finalized period", application.ErrConflict)
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return application.MeterRateConfig{}, err
+		}
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `UPDATE tw_meter_types SET reserve_fee = $2, meter_type_name = COALESCE(NULLIF($3, ''), meter_type_name), updated_at = NOW() WHERE id = $1`, meterTypeID, cmd.ReserveFee, strings.TrimSpace(cmd.MeterTypeName)); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE tw_meter_type_rate_configs SET vat = $2, updated_at = NOW() WHERE id = $1`, foundID, cmd.VatPercent); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE organizations SET vat = $2, updated_at = NOW() WHERE id = $1`, foundOrgID, cmd.VatPercent); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM tw_meter_type_rate_tiers WHERE meter_type_rate_config_id = $1`, foundID); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	for _, t := range cmd.Tiers {
+		if _, err := tx.Exec(ctx, `
+INSERT INTO tw_meter_type_rate_tiers (meter_type_rate_config_id, tier_order, min_units, max_units, rate_per_unit, comment)
+VALUES ($1, $2, $3, $4, $5, $6)
+`, foundID, t.TierOrder, t.MinUnits, t.MaxUnits, t.RatePerUnit, t.Comment); err != nil {
+			return application.MeterRateConfig{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	return s.GetActiveRateConfig(ctx, &foundOrgID)
+}
+
 func (s *Store) ListPeriods(ctx context.Context, orgID *int64) ([]application.InvoicePeriod, error) {
 	const q = `
 SELECT id, org_id, inv_p_name, startdate::text, enddate::text, status
