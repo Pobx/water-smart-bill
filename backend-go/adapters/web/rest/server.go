@@ -107,6 +107,7 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	api.GET("/users", restHandler.ListHomeowners)
 	api.POST("/users", restHandler.CreateHomeowner, RequireRoles(rolesStaffOrAdmin))
 	api.POST("/users/:id/avatar", restHandler.UploadHomeownerAvatar, RequireRoles(rolesStaffOrAdmin))
+	api.GET("/users/:id/outstanding", restHandler.GetOutstandingBalance, RequireRoles(rolesFinanceOrAdmin))
 
 	// Tariffs, Periods, Meters & Readings
 	api.GET("/tabwater/rate-configs", restHandler.GetActiveRateConfig)
@@ -124,6 +125,7 @@ func NewServer(cfg ServerConfig) *echo.Echo {
 	api.POST("/tabwater/readings/sync", restHandler.SyncOfflineReadings, RequireRoles(rolesStaffOrAdmin))
 	api.GET("/tabwater/invoices", restHandler.ListInvoices)
 	api.POST("/tabwater/invoices/:id/pay", restHandler.PayInvoice, RequireRoles(rolesFinanceOrAdmin))
+	api.POST("/tabwater/payments/bulk", restHandler.PayInvoicesBulk, RequireRoles(rolesFinanceOrAdmin))
 	api.GET("/tabwater/reports/collections", restHandler.GetCollectionReport, RequireRoles(rolesFinanceOrAdmin))
 	api.GET("/water-bills/reports/collections", restHandler.GetCollectionReport, RequireRoles(rolesFinanceOrAdmin))
 

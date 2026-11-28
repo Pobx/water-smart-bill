@@ -548,6 +548,34 @@ func (h *WaterBillRestHandler) PayInvoice(c echo.Context) error {
 	return c.JSON(http.StatusOK, inv)
 }
 
+func (h *WaterBillRestHandler) GetOutstandingBalance(c echo.Context) error {
+	userID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || userID <= 0 {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid user id")
+	}
+	res, err := h.Service.GetOutstandingBalance(c.Request().Context(), GetClaims(c), userID)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, res)
+}
+
+func (h *WaterBillRestHandler) PayInvoicesBulk(c echo.Context) error {
+	reqDTO := dto.NewBulkPaymentDTO()
+	if err := reqDTO.Bind(c); err != nil {
+		return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid JSON body")
+	}
+	cmd, err := reqDTO.ConvertToEntity()
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	res, err := h.Service.PayInvoicesBulk(c.Request().Context(), GetClaims(c), cmd)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, res)
+}
+
 func (h *WaterBillRestHandler) GetCollectionReport(c echo.Context) error {
 	var periodID *int64
 	if rawP := c.QueryParam("period_id"); rawP != "" {

@@ -566,6 +566,68 @@ func (cmd PayWaterInvoiceCommand) Validate() error {
 	return err
 }
 
+// ---- Bulk Payment & Outstanding Balance Models ------------------------------
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+type OutstandingBalance struct {
+	Invoices []WaterInvoice `json:"invoices"`
+	Total    float64        `json:"total"`
+}
+
+type BulkPaymentCommand struct {
+	UserID        int64   `json:"user_id"`
+	InvoiceIDs    []int64 `json:"invoice_ids"`
+	Amount        float64 `json:"amount"`
+	BatchID       string  `json:"batch_id"`
+	CashierID     int64   `json:"cashier_id"`
+	PaymentMethod string  `json:"payment_method"`
+}
+
+func (cmd BulkPaymentCommand) IsValid() (bool, error) {
+	if cmd.UserID <= 0 {
+		return false, fmt.Errorf("%w: user_id must be positive", ErrBadRequest)
+	}
+	if len(cmd.InvoiceIDs) == 0 {
+		return false, fmt.Errorf("%w: invoice_ids must not be empty", ErrBadRequest)
+	}
+	seen := make(map[int64]struct{}, len(cmd.InvoiceIDs))
+	for _, id := range cmd.InvoiceIDs {
+		if id <= 0 {
+			return false, fmt.Errorf("%w: invoice_ids must contain positive integers", ErrBadRequest)
+		}
+		if _, dup := seen[id]; dup {
+			return false, fmt.Errorf("%w: duplicate invoice_id %d in request", ErrBadRequest, id)
+		}
+		seen[id] = struct{}{}
+	}
+	if cmd.Amount < 0 {
+		return false, fmt.Errorf("%w: amount must be >= 0", ErrBadRequest)
+	}
+	batchID := strings.TrimSpace(cmd.BatchID)
+	if !uuidPattern.MatchString(batchID) {
+		return false, fmt.Errorf("%w: batch_id must be a valid UUID", ErrBadRequest)
+	}
+	return true, nil
+}
+
+func (cmd BulkPaymentCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type PaymentBatchResult struct {
+	BatchID       string         `json:"batch_id"`
+	OrgID         int64          `json:"org_id"`
+	UserID        int64          `json:"user_id"`
+	TotalAmount   float64        `json:"total_amount"`
+	PaymentMethod string         `json:"payment_method"`
+	ReceiptNo     string         `json:"receipt_no"`
+	PaidAt        string         `json:"paid_at"`
+	ReceivedBy    int64          `json:"received_by"`
+	Invoices      []WaterInvoice `json:"invoices"`
+}
+
 // ---- Optional AI / OCR Meter Reading Support --------------------------------
 
 type MeterOCRResult struct {

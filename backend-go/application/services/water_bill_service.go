@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -274,6 +275,31 @@ func (s *WaterBillService) ListInvoices(ctx context.Context, claims application.
 	return s.Repository.ListInvoices(ctx, scoped, status, periodID)
 }
 
+func (s *WaterBillService) GetOutstandingBalance(ctx context.Context, claims application.Claims, userID int64) (application.OutstandingBalance, error) {
+	if userID <= 0 {
+		return application.OutstandingBalance{}, fmt.Errorf("%w: invalid user id", application.ErrBadRequest)
+	}
+	_, scoped, err := resolveTenantOrgID(claims, nil)
+	if err != nil {
+		return application.OutstandingBalance{}, err
+	}
+	invoices, err := s.Repository.FindUnpaidInvoices(ctx, scoped, userID)
+	if err != nil {
+		return application.OutstandingBalance{}, err
+	}
+	if invoices == nil {
+		invoices = []application.WaterInvoice{}
+	}
+	var total float64
+	for _, inv := range invoices {
+		total += inv.TotalPaid
+	}
+	return application.OutstandingBalance{
+		Invoices: invoices,
+		Total:    math.Round(total*100) / 100,
+	}, nil
+}
+
 func (s *WaterBillService) PayInvoice(ctx context.Context, claims application.Claims, cmd application.PayWaterInvoiceCommand) (application.WaterInvoice, error) {
 	if _, err := cmd.IsValid(); err != nil {
 		return application.WaterInvoice{}, err
@@ -283,6 +309,23 @@ func (s *WaterBillService) PayInvoice(ctx context.Context, claims application.Cl
 		return application.WaterInvoice{}, err
 	}
 	return s.Repository.PayInvoice(ctx, scoped, cmd)
+}
+
+func (s *WaterBillService) PayInvoicesBulk(ctx context.Context, claims application.Claims, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
+	if _, err := cmd.IsValid(); err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+	orgID, _, err := resolveTenantOrgID(claims, nil)
+	if err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+	if cmd.CashierID <= 0 {
+		cmd.CashierID = 1
+	}
+	if strings.TrimSpace(cmd.PaymentMethod) == "" {
+		cmd.PaymentMethod = "cash"
+	}
+	return s.Repository.PayInvoicesBulk(ctx, orgID, cmd)
 }
 
 func (s *WaterBillService) GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {

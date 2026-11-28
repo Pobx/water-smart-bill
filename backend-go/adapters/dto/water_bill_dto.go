@@ -398,3 +398,40 @@ func (d *LiffLinkAccountDTO) ConvertToEntity() (application.LiffLinkAccountComma
 	}
 	return cmd, nil
 }
+
+type BulkPaymentDTO struct {
+	UserID        int64   `json:"user_id"`
+	InvoiceIDs    []int64 `json:"invoice_ids"`
+	Amount        float64 `json:"amount"`
+	BatchID       string  `json:"batch_id"`
+	PaymentMethod string  `json:"payment_method"`
+}
+
+func NewBulkPaymentDTO() *BulkPaymentDTO {
+	return &BulkPaymentDTO{}
+}
+
+func (d *BulkPaymentDTO) Bind(c echo.Context) error {
+	if err := c.Bind(d); err != nil {
+		return err
+	}
+	if d.BatchID == "" {
+		d.BatchID = c.Request().Header.Get("Idempotency-Key")
+	}
+	return nil
+}
+
+func (d *BulkPaymentDTO) ConvertToEntity() (application.BulkPaymentCommand, error) {
+	cmd := application.BulkPaymentCommand{
+		UserID:        d.UserID,
+		InvoiceIDs:    d.InvoiceIDs,
+		Amount:        d.Amount,
+		BatchID:       d.BatchID,
+		CashierID:     1,
+		PaymentMethod: d.PaymentMethod,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.BulkPaymentCommand{}, err
+	}
+	return cmd, nil
+}

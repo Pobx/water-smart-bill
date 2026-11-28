@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -783,6 +784,263 @@ func TestUpdateRateConfig_FinalizedPeriodConflict(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409 Conflict for finalized period, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetOutstandingBalance_ReturnsUnpaidInvoices(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// User 1 already has 1 unpaid invoice (ID 1, TotalPaid 101.65) in memory.NewStore().
+	// Record 2 more invoices for meter 1 (User 1), then pay 1 of them -> 3 total, 2 unpaid.
+	createReading := func(invNo string, currentMeter float64) application.WaterInvoice {
+		body, _ := json.Marshal(map[string]any{
+			"inv_no":        invNo,
+			"meter_id":      1,
+			"period_id":     1,
+			"current_meter": currentMeter,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/readings", bytes.NewReader(body))
+		req.Header.Set("Authorization", "Bearer valid-admin-token")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("failed to create reading %s: %d %s", invNo, rec.Code, rec.Body.String())
+		}
+		var inv application.WaterInvoice
+		if err := json.Unmarshal(rec.Body.Bytes(), &inv); err != nil {
+			t.Fatalf("decode invoice: %v", err)
+		}
+		return inv
+	}
+
+	invA := createReading("INV-OUT-001", 130)
+	invB := createReading("INV-OUT-002", 140)
+
+	// Pay invB so only invoice 1 and invA remain unpaid
+	payReq := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/invoices/"+strconv.FormatInt(invB.ID, 10)+"/pay", strings.NewReader(`{"payment_method":"cash"}`))
+	payReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	payReq.Header.Set("Content-Type", "application/json")
+	payRec := httptest.NewRecorder()
+	srv.ServeHTTP(payRec, payReq)
+	if payRec.Code != http.StatusOK {
+		t.Fatalf("failed to pay invoice %d: %d %s", invB.ID, payRec.Code, payRec.Body.String())
+	}
+
+	// Non-finance role must be forbidden
+	reqForbidden := httptest.NewRequest(http.MethodGet, "/api/v1/users/1/outstanding", nil)
+	reqForbidden.Header.Set("Authorization", "Bearer valid-reader-token")
+	recForbidden := httptest.NewRecorder()
+	srv.ServeHTTP(recForbidden, reqForbidden)
+	if recForbidden.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for non-finance role, got %d: %s", recForbidden.Code, recForbidden.Body.String())
+	}
+
+	// Finance/admin gets 2 unpaid invoices with accurate total
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/users/1/outstanding", nil)
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Invoices []application.WaterInvoice `json:"invoices"`
+		Total    float64                    `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode outstanding response: %v", err)
+	}
+	if len(resp.Invoices) != 2 {
+		t.Fatalf("expected 2 unpaid invoices, got %d", len(resp.Invoices))
+	}
+	expectedTotal := 101.65 + invA.TotalPaid
+	if diff := resp.Total - expectedTotal; diff < -0.01 || diff > 0.01 {
+		t.Fatalf("expected total %.2f, got %.2f", expectedTotal, resp.Total)
+	}
+}
+
+func TestPayInvoicesBulk_AtomicSuccess(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// Create a second unpaid invoice for User 1 (meter 1)
+	readBody, _ := json.Marshal(map[string]any{
+		"inv_no":        "INV-BULK-001",
+		"meter_id":      1,
+		"period_id":     1,
+		"current_meter": 135,
+	})
+	readReq := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/readings", bytes.NewReader(readBody))
+	readReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	readReq.Header.Set("Content-Type", "application/json")
+	readRec := httptest.NewRecorder()
+	srv.ServeHTTP(readRec, readReq)
+	if readRec.Code != http.StatusCreated {
+		t.Fatalf("create reading failed: %d %s", readRec.Code, readRec.Body.String())
+	}
+	var inv2 application.WaterInvoice
+	_ = json.Unmarshal(readRec.Body.Bytes(), &inv2)
+
+	expectedSum := 101.65 + inv2.TotalPaid
+	bulkBody, _ := json.Marshal(map[string]any{
+		"user_id":        1,
+		"invoice_ids":    []int64{1, inv2.ID},
+		"amount":         expectedSum,
+		"batch_id":       "11111111-1111-4111-8111-111111111111",
+		"payment_method": "cash",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/payments/bulk", bytes.NewReader(bulkBody))
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for bulk payment, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var result struct {
+		BatchID     string                     `json:"batch_id"`
+		TotalAmount float64                    `json:"total_amount"`
+		ReceiptNo   string                     `json:"receipt_no"`
+		Invoices    []application.WaterInvoice `json:"invoices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode bulk result: %v", err)
+	}
+	if result.BatchID != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("unexpected batch_id: %s", result.BatchID)
+	}
+	if len(result.Invoices) != 2 {
+		t.Fatalf("expected 2 paid invoices, got %d", len(result.Invoices))
+	}
+	for _, inv := range result.Invoices {
+		if inv.Status != "paid" {
+			t.Fatalf("expected invoice %d to be paid, got %s", inv.ID, inv.Status)
+		}
+	}
+	if result.ReceiptNo == "" {
+		t.Fatalf("expected consolidated receipt_no to be non-empty")
+	}
+
+	// Verify outstanding balance is now 0
+	outReq := httptest.NewRequest(http.MethodGet, "/api/v1/users/1/outstanding", nil)
+	outReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	outRec := httptest.NewRecorder()
+	srv.ServeHTTP(outRec, outReq)
+	if outRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from outstanding after payment, got %d", outRec.Code)
+	}
+	var outResp struct {
+		Invoices []application.WaterInvoice `json:"invoices"`
+		Total    float64                    `json:"total"`
+	}
+	_ = json.Unmarshal(outRec.Body.Bytes(), &outResp)
+	if len(outResp.Invoices) != 0 || outResp.Total != 0 {
+		t.Fatalf("expected 0 unpaid invoices after bulk pay, got %d (total %.2f)", len(outResp.Invoices), outResp.Total)
+	}
+}
+
+func TestPayInvoicesBulk_DuplicateBatchID(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	batchID := "22222222-2222-4222-8222-222222222222"
+	bulkBody, _ := json.Marshal(map[string]any{
+		"user_id":     1,
+		"invoice_ids": []int64{1},
+		"amount":      101.65,
+		"batch_id":    batchID,
+	})
+
+	// First call succeeds
+	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/payments/bulk", bytes.NewReader(bulkBody))
+	req1.Header.Set("Authorization", "Bearer valid-admin-token")
+	req1.Header.Set("Content-Type", "application/json")
+	rec1 := httptest.NewRecorder()
+	srv.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("expected first bulk payment to succeed (200), got %d: %s", rec1.Code, rec1.Body.String())
+	}
+
+	// Second call with same batch_id must return 409 Conflict
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/payments/bulk", bytes.NewReader(bulkBody))
+	req2.Header.Set("Authorization", "Bearer valid-admin-token")
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	srv.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict for duplicate batch_id, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+}
+
+func TestPayInvoicesBulk_PartialFailRollback(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// Invoice 1 is valid & unpaid for user 1; invoice 99999 does not exist -> must rollback completely
+	batchID := "33333333-3333-4333-8333-333333333333"
+	bulkBody, _ := json.Marshal(map[string]any{
+		"user_id":     1,
+		"invoice_ids": []int64{1, 99999},
+		"amount":      200.00,
+		"batch_id":    batchID,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/payments/bulk", bytes.NewReader(bulkBody))
+	req.Header.Set("Authorization", "Bearer valid-admin-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("expected bulk payment with invalid second invoice to fail, got 200: %s", rec.Body.String())
+	}
+
+	// Verify invoice 1 is STILL unpaid (no partial mutation)
+	outReq := httptest.NewRequest(http.MethodGet, "/api/v1/users/1/outstanding", nil)
+	outReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	outRec := httptest.NewRecorder()
+	srv.ServeHTTP(outRec, outReq)
+	if outRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from outstanding, got %d", outRec.Code)
+	}
+	var outResp struct {
+		Invoices []application.WaterInvoice `json:"invoices"`
+		Total    float64                    `json:"total"`
+	}
+	_ = json.Unmarshal(outRec.Body.Bytes(), &outResp)
+	if len(outResp.Invoices) != 1 || outResp.Invoices[0].ID != 1 {
+		t.Fatalf("expected invoice 1 to remain unpaid after rollback, got %+v", outResp.Invoices)
 	}
 }
 

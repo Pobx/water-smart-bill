@@ -22,10 +22,11 @@ type Store struct {
 	homeowners  []application.HomeownerUser
 	rateConfig  application.MeterRateConfig
 	periods     []application.InvoicePeriod
-	meters      []application.WaterMeter
-	meterRoutes []application.MeterRoute
-	invoices    []application.WaterInvoice
-	nextZoneID  int64
+	meters         []application.WaterMeter
+	meterRoutes    []application.MeterRoute
+	invoices       []application.WaterInvoice
+	paymentBatches map[string]application.PaymentBatchResult
+	nextZoneID     int64
 	nextSubID   int64
 	nextUserID  int64
 	nextPeriod  int64
@@ -272,7 +273,8 @@ func NewStore() *Store {
 				RecordedAt:      "2026-10-25T09:30:00Z",
 			},
 		},
-		nextZoneID:  3,
+		paymentBatches: map[string]application.PaymentBatchResult{},
+		nextZoneID:     3,
 		nextSubID:   3,
 		nextUserID:  3,
 		nextPeriod:  3,
@@ -909,6 +911,138 @@ func (s *Store) PayInvoice(_ context.Context, _ *int64, cmd application.PayWater
 		}
 	}
 	return application.WaterInvoice{}, application.ErrNotFound
+}
+
+func (s *Store) FindUnpaidInvoices(_ context.Context, orgID *int64, userID int64) ([]application.WaterInvoice, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	userMeters := make(map[int64]bool)
+	for _, m := range s.meters {
+		if m.UserID != userID {
+			continue
+		}
+		if orgID != nil && m.OrgID != *orgID {
+			continue
+		}
+		userMeters[m.MeterID] = true
+	}
+
+	out := make([]application.WaterInvoice, 0)
+	for _, inv := range s.invoices {
+		if orgID != nil && inv.OrgID != *orgID {
+			continue
+		}
+		if !userMeters[inv.MeterID] {
+			continue
+		}
+		st := strings.ToLower(strings.TrimSpace(inv.Status))
+		if st != "invoice" && st != "owe" {
+			continue
+		}
+		out = append(out, inv)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PeriodID != out[j].PeriodID {
+			return out[i].PeriodID < out[j].PeriodID
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (s *Store) PayInvoicesBulk(_ context.Context, orgID int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	batchID := strings.ToLower(strings.TrimSpace(cmd.BatchID))
+	if _, exists := s.paymentBatches[batchID]; exists {
+		return application.PaymentBatchResult{}, fmt.Errorf("%w: duplicate batch_id", application.ErrConflict)
+	}
+
+	userMeters := make(map[int64]bool)
+	for _, m := range s.meters {
+		if m.OrgID == orgID && m.UserID == cmd.UserID {
+			userMeters[m.MeterID] = true
+		}
+	}
+
+	// Phase 1: Validate all invoices BEFORE mutating any state (atomic rollback guarantee)
+	targetIndices := make([]int, 0, len(cmd.InvoiceIDs))
+	var serverTotal float64
+	for _, invID := range cmd.InvoiceIDs {
+		idx := -1
+		for i := range s.invoices {
+			if s.invoices[i].ID == invID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d not found", application.ErrNotFound, invID)
+		}
+		inv := s.invoices[idx]
+		if inv.OrgID != orgID {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d belongs to another organization", application.ErrForbidden, invID)
+		}
+		if !userMeters[inv.MeterID] {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d does not belong to user %d", application.ErrForbidden, invID, cmd.UserID)
+		}
+		st := strings.ToLower(strings.TrimSpace(inv.Status))
+		if st != "invoice" && st != "owe" {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d is already paid or not payable", application.ErrConflict, invID)
+		}
+		serverTotal += inv.TotalPaid
+		targetIndices = append(targetIndices, idx)
+	}
+
+	serverTotal = math.Round(serverTotal*100) / 100
+	if cmd.Amount > 0 && cmd.Amount+0.01 < serverTotal {
+		return application.PaymentBatchResult{}, fmt.Errorf("%w: payment amount %.2f is less than total due %.2f", application.ErrBadRequest, cmd.Amount, serverTotal)
+	}
+
+	// Phase 2: All checks passed — apply atomic mutation
+	method := strings.TrimSpace(cmd.PaymentMethod)
+	if method == "" {
+		method = "cash"
+	}
+	cashierID := cmd.CashierID
+	if cashierID <= 0 {
+		cashierID = 1
+	}
+	now := time.Now().UTC()
+	paidAt := now.Format(time.RFC3339)
+	receiptNo := fmt.Sprintf("RC-BATCH-%s-%s", now.Format("200601"), strings.ToUpper(batchID[:8]))
+
+	paidInvoices := make([]application.WaterInvoice, 0, len(targetIndices))
+	for _, idx := range targetIndices {
+		s.invoices[idx].Status = "paid"
+		s.invoices[idx].PaymentMethod = method
+		s.invoices[idx].CashierID = cashierID
+		s.invoices[idx].PaidAt = paidAt
+		s.invoices[idx].ReceiptNo = receiptNo
+		for mIdx := range s.meters {
+			if s.meters[mIdx].MeterID == s.invoices[idx].MeterID && s.meters[mIdx].OweCount > 0 {
+				s.meters[mIdx].OweCount--
+			}
+		}
+		paidInvoices = append(paidInvoices, s.invoices[idx])
+	}
+
+	result := application.PaymentBatchResult{
+		BatchID:       batchID,
+		OrgID:         orgID,
+		UserID:        cmd.UserID,
+		TotalAmount:   serverTotal,
+		PaymentMethod: method,
+		ReceiptNo:     receiptNo,
+		PaidAt:        paidAt,
+		ReceivedBy:    cashierID,
+		Invoices:      paidInvoices,
+	}
+	s.paymentBatches[batchID] = result
+	return result, nil
 }
 
 func (s *Store) GetLiffPortalData(_ context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {

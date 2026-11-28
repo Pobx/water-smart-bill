@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pobx/water-smart-bill/backend-go/application"
@@ -856,6 +857,257 @@ WHERE inv.id = $1
 		}
 	}
 	return application.WaterInvoice{}, application.ErrNotFound
+}
+
+func (s *Store) FindUnpaidInvoices(ctx context.Context, orgID *int64, userID int64) ([]application.WaterInvoice, error) {
+	const q = `
+SELECT inv.id, inv.inv_no, COALESCE(inv.client_reading_id, ''), inv.org_id, COALESCE(o.org_name, 'อบต.ห้องแซง'),
+       inv.meter_id_fk, COALESCE(m.meternumber, ''), COALESCE(m.submeter_name, ''),
+       COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''),
+       inv.inv_period_id_fk, COALESCE(p.inv_p_name, ''),
+       inv.lastmeter::float8, inv.currentmeter::float8, inv.water_used::float8,
+       inv.paid::float8, inv.reserve_meter::float8, inv.vat::float8, inv.totalpaid::float8,
+       inv.reading_photo_url, inv.ocr_text, inv.ocr_confidence::float8, inv.status,
+       COALESCE(inv.payment_method, ''), COALESCE(inv.receipt_no, ''), COALESCE(inv.paid_at::text, ''), COALESCE(inv.cashier_id, 0),
+       inv.recorded_at::text
+FROM tw_invoice inv
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
+LEFT JOIN organizations o ON o.id = inv.org_id
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN zones z ON z.id = m.undertake_zone_id
+LEFT JOIN invoice_period p ON p.id = inv.inv_period_id_fk
+WHERE m.user_id = $1
+  AND ($2::bigint IS NULL OR inv.org_id = $2)
+  AND inv.status IN ('invoice', 'owe')
+ORDER BY inv.inv_period_id_fk ASC, inv.id ASC
+`
+	rows, err := s.db.Query(ctx, q, userID, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]application.WaterInvoice, 0)
+	for rows.Next() {
+		var inv application.WaterInvoice
+		if err := rows.Scan(
+			&inv.ID, &inv.InvoiceNo, &inv.ClientReadingID, &inv.OrgID, &inv.OrgName,
+			&inv.MeterID, &inv.MeterNumber, &inv.HomeownerName, &inv.HouseNo, &inv.ZoneName,
+			&inv.PeriodID, &inv.PeriodName, &inv.LastMeter, &inv.CurrentMeter, &inv.WaterUsed,
+			&inv.Paid, &inv.ReserveMeter, &inv.Vat, &inv.TotalPaid,
+			&inv.ReadingPhotoURL, &inv.OCRText, &inv.OCRConfidence, &inv.Status,
+			&inv.PaymentMethod, &inv.ReceiptNo, &inv.PaidAt, &inv.CashierID,
+			&inv.RecordedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) createPaymentBatch(ctx context.Context, tx pgx.Tx, batchID string, orgID, userID int64, totalAmount float64, receivedBy int64) (string, error) {
+	const q = `
+INSERT INTO payment_batches (id, org_id, user_id, total_amount, paid_at, received_by)
+VALUES ($1::uuid, $2, $3, $4, NOW(), $5)
+RETURNING paid_at::text
+`
+	var paidAt string
+	err := tx.QueryRow(ctx, q, batchID, orgID, userID, totalAmount, receivedBy).Scan(&paidAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return "", fmt.Errorf("%w: duplicate batch_id", application.ErrConflict)
+		}
+		return "", err
+	}
+	return paidAt, nil
+}
+
+func (s *Store) PayInvoicesBulk(ctx context.Context, orgID int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
+	batchID := strings.ToLower(strings.TrimSpace(cmd.BatchID))
+	method := strings.TrimSpace(cmd.PaymentMethod)
+	if method == "" {
+		method = "cash"
+	}
+	cashierID := cmd.CashierID
+	if cashierID <= 0 {
+		cashierID = 1
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Idempotency guard: check if batch_id already exists before inspecting invoices
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM payment_batches WHERE id = $1::uuid)`, batchID).Scan(&exists); err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+	if exists {
+		return application.PaymentBatchResult{}, fmt.Errorf("%w: duplicate batch_id", application.ErrConflict)
+	}
+
+	type lockedInvoice struct {
+		id           int64
+		orgID        int64
+		meterID      int64
+		userID       int64
+		paid         float64
+		vat          float64
+		reserveMeter float64
+		totalPaid    float64
+		status       string
+	}
+
+	locked := make([]lockedInvoice, 0, len(cmd.InvoiceIDs))
+	var serverTotal float64
+	const qLock = `
+SELECT inv.id, inv.org_id, inv.meter_id_fk, m.user_id,
+       inv.paid::float8, inv.vat::float8, inv.reserve_meter::float8, inv.totalpaid::float8, inv.status
+FROM tw_invoice inv
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
+WHERE inv.id = $1
+FOR UPDATE OF inv
+`
+	for _, invID := range cmd.InvoiceIDs {
+		var row lockedInvoice
+		err := tx.QueryRow(ctx, qLock, invID).Scan(
+			&row.id, &row.orgID, &row.meterID, &row.userID,
+			&row.paid, &row.vat, &row.reserveMeter, &row.totalPaid, &row.status,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d not found", application.ErrNotFound, invID)
+		}
+		if err != nil {
+			return application.PaymentBatchResult{}, err
+		}
+		if row.orgID != orgID {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d belongs to another organization", application.ErrForbidden, invID)
+		}
+		if row.userID != cmd.UserID {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d does not belong to user %d", application.ErrForbidden, invID, cmd.UserID)
+		}
+		st := strings.ToLower(strings.TrimSpace(row.status))
+		if st != "invoice" && st != "owe" {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d is already paid or not payable", application.ErrConflict, invID)
+		}
+		serverTotal += row.totalPaid
+		locked = append(locked, row)
+	}
+
+	serverTotal = math.Round(serverTotal*100) / 100
+	if cmd.Amount > 0 && cmd.Amount+0.01 < serverTotal {
+		return application.PaymentBatchResult{}, fmt.Errorf("%w: payment amount %.2f is less than total due %.2f", application.ErrBadRequest, cmd.Amount, serverTotal)
+	}
+
+	paidAt, err := s.createPaymentBatch(ctx, tx, batchID, orgID, cmd.UserID, serverTotal, cashierID)
+	if err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+
+	receiptNo := fmt.Sprintf("RC-BATCH-%s-%s", time.Now().UTC().Format("200601"), strings.ToUpper(batchID[:8]))
+	const qInsAcc = `
+INSERT INTO tw_acc_transactions (
+    org_id, meter_id_fk, paidsum, vatsum, reserve_meter_sum, totalpaidsum,
+    payment_method, status, cashier, batch_payment_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, '1', $8, $9::uuid)
+RETURNING id
+`
+	const qUpdInv = `
+UPDATE tw_invoice
+SET status = 'paid',
+    payment_method = $2,
+    receipt_no = $3,
+    paid_at = NOW(),
+    cashier_id = $4,
+    acc_trans_id_fk = $5,
+    updated_at = NOW()
+WHERE id = $1
+`
+	const qUpdMeter = `
+UPDATE tw_meter_infos
+SET owe_count = GREATEST(0, owe_count - 1), updated_at = NOW()
+WHERE meter_id = $1
+`
+	for _, row := range locked {
+		var accID int64
+		if err := tx.QueryRow(ctx, qInsAcc,
+			orgID, row.meterID, row.paid, row.vat, row.reserveMeter, row.totalPaid,
+			method, cashierID, batchID,
+		).Scan(&accID); err != nil {
+			return application.PaymentBatchResult{}, err
+		}
+		if _, err := tx.Exec(ctx, qUpdInv, row.id, method, receiptNo, cashierID, accID); err != nil {
+			return application.PaymentBatchResult{}, err
+		}
+		if _, err := tx.Exec(ctx, qUpdMeter, row.meterID); err != nil {
+			return application.PaymentBatchResult{}, err
+		}
+	}
+
+	const qFetch = `
+SELECT inv.id, inv.inv_no, COALESCE(inv.client_reading_id, ''), inv.org_id, COALESCE(o.org_name, 'อบต.ห้องแซง'),
+       inv.meter_id_fk, COALESCE(m.meternumber, ''), COALESCE(m.submeter_name, ''),
+       COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''),
+       inv.inv_period_id_fk, COALESCE(p.inv_p_name, ''),
+       inv.lastmeter::float8, inv.currentmeter::float8, inv.water_used::float8,
+       inv.paid::float8, inv.reserve_meter::float8, inv.vat::float8, inv.totalpaid::float8,
+       inv.reading_photo_url, inv.ocr_text, inv.ocr_confidence::float8, inv.status,
+       COALESCE(inv.payment_method, ''), COALESCE(inv.receipt_no, ''), COALESCE(inv.paid_at::text, ''), COALESCE(inv.cashier_id, 0),
+       inv.recorded_at::text
+FROM tw_invoice inv
+LEFT JOIN organizations o ON o.id = inv.org_id
+LEFT JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN zones z ON z.id = m.undertake_zone_id
+LEFT JOIN invoice_period p ON p.id = inv.inv_period_id_fk
+WHERE inv.id = ANY($1::bigint[])
+ORDER BY inv.inv_period_id_fk ASC, inv.id ASC
+`
+	rows, err := tx.Query(ctx, qFetch, cmd.InvoiceIDs)
+	if err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+	paidInvoices := make([]application.WaterInvoice, 0, len(locked))
+	for rows.Next() {
+		var inv application.WaterInvoice
+		if err := rows.Scan(
+			&inv.ID, &inv.InvoiceNo, &inv.ClientReadingID, &inv.OrgID, &inv.OrgName,
+			&inv.MeterID, &inv.MeterNumber, &inv.HomeownerName, &inv.HouseNo, &inv.ZoneName,
+			&inv.PeriodID, &inv.PeriodName, &inv.LastMeter, &inv.CurrentMeter, &inv.WaterUsed,
+			&inv.Paid, &inv.ReserveMeter, &inv.Vat, &inv.TotalPaid,
+			&inv.ReadingPhotoURL, &inv.OCRText, &inv.OCRConfidence, &inv.Status,
+			&inv.PaymentMethod, &inv.ReceiptNo, &inv.PaidAt, &inv.CashierID,
+			&inv.RecordedAt,
+		); err != nil {
+			rows.Close()
+			return application.PaymentBatchResult{}, err
+		}
+		paidInvoices = append(paidInvoices, inv)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return application.PaymentBatchResult{}, err
+	}
+	rows.Close()
+
+	if err := tx.Commit(ctx); err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+
+	return application.PaymentBatchResult{
+		BatchID:       batchID,
+		OrgID:         orgID,
+		UserID:        cmd.UserID,
+		TotalAmount:   serverTotal,
+		PaymentMethod: method,
+		ReceiptNo:     receiptNo,
+		PaidAt:        paidAt,
+		ReceivedBy:    cashierID,
+		Invoices:      paidInvoices,
+	}, nil
 }
 
 func (s *Store) GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {
