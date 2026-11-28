@@ -6,9 +6,10 @@ import { FieldReaderScreen, useFieldReader } from '@/features/field-reader'
 import { LiffPortalScreen, useLiffPortal } from '@/features/liff-portal'
 import { FinanceCashierScreen } from '@/features/finance-cashier'
 import { DebtNoticeListScreen } from '@/features/debt-management'
+import { DailyCollectionReport } from '@/features/reports'
 import { SearchableSelect } from '@/shared/ui'
 
-export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff' | 'debt'
+export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff' | 'debt' | 'reports'
 
 export interface MenuItem {
   id: TabKey
@@ -68,6 +69,14 @@ export const MENU_ITEMS: MenuItem[] = [
     allowedRoles: ['admin', 'tabwater_staff'],
     description: 'สร้างใบแจ้งเตือนค้างชำระ, บันทึกตัดมิเตอร์ และเปิดคืนมิเตอร์หลังชำระครบ',
   },
+  {
+    id: 'reports',
+    label: '7. รายงานการรับชำระ (Excel)',
+    shortLabel: 'รายงานการรับชำระ',
+    icon: '📑',
+    allowedRoles: ['admin', 'finance_staff'],
+    description: 'รายงานการรับชำระค่าน้ำประจำวัน/ตามช่วงเวลา และส่งออกไฟล์ Excel (.xlsx)',
+  },
 ]
 
 export function App() {
@@ -99,7 +108,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('tab') as TabKey
-      if (param && ['master', 'tariffs', 'reader', 'cashier', 'liff', 'debt'].includes(param)) {
+      if (param && ['master', 'tariffs', 'reader', 'cashier', 'liff', 'debt', 'reports'].includes(param)) {
         return param
       }
     }
@@ -356,6 +365,10 @@ export function App() {
               currentRole={auth.currentRole}
               homeowners={masterData.homeowners}
             />
+          )}
+
+          {resolvedActiveTab === 'reports' && (
+            <DailyCollectionReport token={auth.jwtToken} />
           )}
         </main>
       </div>
