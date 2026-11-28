@@ -1,6 +1,7 @@
 import { SearchableSelect } from '@/shared/ui'
 import type { WaterMeterItem } from '@/shared/types/waterSmartBill'
 import type { DebtNotice } from './liffPortalApi'
+import { ReportIncidentForm } from './ReportIncidentForm'
 import type { useLiffPortal } from './useLiffPortal'
 
 export interface LiffPortalScreenProps extends Omit<ReturnType<typeof useLiffPortal>, 'debtNotices'> {
@@ -17,6 +18,9 @@ export function LiffPortalScreen({
   liffInvoices,
   liffMeter,
   debtNotices = [],
+  isIncidentFormOpen,
+  setIsIncidentFormOpen,
+  submitIncident,
 }: LiffPortalScreenProps) {
   const activeDebtNotices = debtNotices.filter(
     (notice) => notice.status === 'pending' || notice.status === 'sent'
@@ -80,6 +84,30 @@ export function LiffPortalScreen({
             <span className="font-mono font-bold text-sky-700">{liffMeter.meternumber}</span>
           </div>
         </div>
+      )}
+
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => setIsIncidentFormOpen((prev) => !prev)}
+          aria-expanded={isIncidentFormOpen}
+          className="flex w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left transition hover:bg-amber-100/70"
+        >
+          <span className="flex items-center gap-2 text-xs font-bold text-amber-900">
+            <span aria-hidden="true">🚨</span>
+            <span>แจ้งเหตุขัดข้องน้ำประปา</span>
+          </span>
+          <span className="text-xs font-semibold text-amber-700">
+            {isIncidentFormOpen ? 'ซ่อนฟอร์ม' : 'แจ้งเหตุ'}
+          </span>
+        </button>
+      </div>
+
+      {isIncidentFormOpen && (
+        <ReportIncidentForm
+          onSubmit={submitIncident}
+          onCancel={() => setIsIncidentFormOpen(false)}
+        />
       )}
 
       <div className="space-y-3">
