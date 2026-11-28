@@ -1,6 +1,17 @@
 import { apiRequest } from '@/shared/api/httpClient'
-import type { InvoiceItem, MeterRoute, WaterMeterItem } from '@/shared/types/waterSmartBill'
+import type {
+  InvoiceItem,
+  MeterReadingStatusItem,
+  MeterRoute,
+  WaterMeterItem,
+} from '@/shared/types/waterSmartBill'
 import type { OfflineReadingRecord } from '@/features/offline/offlineStore'
+
+export interface FetchReadingsParams {
+  periodId?: number | null
+  status?: 'recorded' | 'pending'
+  routeId?: number | null
+}
 
 export const fieldReaderApi = {
   fetchMeterRoutes: async (token?: string): Promise<MeterRoute[]> => {
@@ -16,6 +27,30 @@ export const fieldReaderApi = {
       method: 'GET',
       token,
     })
+    return res.items ?? []
+  },
+  fetchReadings: async (
+    params?: FetchReadingsParams,
+    token?: string,
+  ): Promise<MeterReadingStatusItem[]> => {
+    const qs = new URLSearchParams()
+    if (params?.periodId != null) {
+      qs.set('period_id', String(params.periodId))
+    }
+    if (params?.status) {
+      qs.set('status', params.status)
+    }
+    if (params?.routeId != null) {
+      qs.set('route_id', String(params.routeId))
+    }
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    const res = await apiRequest<{ items: MeterReadingStatusItem[] }>(
+      `/api/v1/tabwater/readings${suffix}`,
+      {
+        method: 'GET',
+        token,
+      },
+    )
     return res.items ?? []
   },
   syncOfflineReadings: (readings: OfflineReadingRecord[], token?: string) =>
@@ -40,3 +75,4 @@ export const fieldReaderApi = {
 
 export const fetchMeterRoutes = fieldReaderApi.fetchMeterRoutes
 export const fetchMeters = fieldReaderApi.fetchMeters
+export const fetchReadings = fieldReaderApi.fetchReadings

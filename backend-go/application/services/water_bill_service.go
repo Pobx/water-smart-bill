@@ -181,6 +181,19 @@ func (s *WaterBillService) RecordMeterReading(ctx context.Context, claims applic
 	return s.Repository.RecordMeterReading(ctx, orgID, 1, cmd)
 }
 
+func (s *WaterBillService) ListReadings(ctx context.Context, claims application.Claims, requestedOrgID *int64, filter application.MeterReadingFilter) ([]application.MeterReadingItem, error) {
+	status := strings.ToLower(strings.TrimSpace(filter.Status))
+	if status != "" && status != "recorded" && status != "pending" {
+		return nil, application.ErrBadRequest
+	}
+	filter.Status = status
+	scoped, err := claims.ResolveOrgScope(requestedOrgID)
+	if err != nil {
+		return nil, err
+	}
+	return s.Repository.ListReadings(ctx, scoped, filter)
+}
+
 func (s *WaterBillService) SyncOfflineReadings(ctx context.Context, claims application.Claims, batch application.OfflineSyncBatchCommand) (application.OfflineSyncBatchResult, error) {
 	orgID, _, err := resolveTenantOrgID(claims, nil)
 	if err != nil {

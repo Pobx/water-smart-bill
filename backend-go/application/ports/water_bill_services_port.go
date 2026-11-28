@@ -24,6 +24,7 @@ type WaterBillServiceInterface interface {
 	ListMeterRoutes(ctx context.Context, claims application.Claims, requestedOrgID *int64) ([]application.MeterRoute, error)
 	CreateMeter(ctx context.Context, claims application.Claims, cmd application.CreateWaterMeterCommand) (application.WaterMeter, error)
 	RecordMeterReading(ctx context.Context, claims application.Claims, cmd application.RecordMeterReadingCommand) (application.WaterInvoice, error)
+	ListReadings(ctx context.Context, claims application.Claims, requestedOrgID *int64, filter application.MeterReadingFilter) ([]application.MeterReadingItem, error)
 	SyncOfflineReadings(ctx context.Context, claims application.Claims, batch application.OfflineSyncBatchCommand) (application.OfflineSyncBatchResult, error)
 	GetOfflineBundle(ctx context.Context, claims application.Claims, zoneID *int64) (application.OfflineBundle, error)
 	ListInvoices(ctx context.Context, claims application.Claims, status string, periodID *int64) ([]application.WaterInvoice, error)

@@ -307,6 +307,34 @@ type WaterMeter struct {
 	OweCount           int     `json:"owe_count"`
 	CutMeter           string  `json:"cutmeter"`
 	LastMeterRecording float64 `json:"last_meter_recording"`
+	RouteID            *int64  `json:"route_id,omitempty"`
+}
+
+type MeterReadingFilter struct {
+	PeriodID *int64
+	Status   string
+	RouteID  *int64
+}
+
+type MeterReadingItem struct {
+	ID            int64    `json:"id,omitempty"`
+	InvoiceNo     string   `json:"inv_no,omitempty"`
+	OrgID         int64    `json:"org_id"`
+	MeterID       int64    `json:"meter_id"`
+	MeterNumber   string   `json:"meternumber"`
+	HomeownerName string   `json:"homeowner_name"`
+	HouseNo       string   `json:"house_no"`
+	ZoneName      string   `json:"zone_name"`
+	RouteID       *int64   `json:"route_id,omitempty"`
+	PeriodID      int64    `json:"period_id,omitempty"`
+	PeriodName    string   `json:"period_name,omitempty"`
+	LastMeter     float64  `json:"lastmeter"`
+	CurrentMeter  *float64 `json:"currentmeter,omitempty"`
+	WaterUsed     float64  `json:"water_used,omitempty"`
+	TotalPaid     float64  `json:"totalpaid,omitempty"`
+	ReadingStatus string   `json:"reading_status"`
+	InvoiceStatus string   `json:"invoice_status,omitempty"`
+	RecordedAt    string   `json:"recorded_at,omitempty"`
 }
 
 type CreateWaterMeterCommand struct {

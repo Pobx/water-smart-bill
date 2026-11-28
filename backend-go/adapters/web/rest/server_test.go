@@ -488,5 +488,104 @@ func TestGetMeterRoutes_UnauthorizedRole(t *testing.T) {
 	}
 }
 
+func TestListReadings_FilterByStatus(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	bl := blacklist.NewStore("")
+
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    bl,
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// 1. status=recorded for period_id=1 returns only meters with invoices in period 1 (HSG-0001)
+	reqRec := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/readings?period_id=1&status=recorded", nil)
+	reqRec.Header.Set("Authorization", "Bearer valid-reader-token")
+	recRec := httptest.NewRecorder()
+	srv.ServeHTTP(recRec, reqRec)
+	if recRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for recorded readings, got %d: %s", recRec.Code, recRec.Body.String())
+	}
+
+	var recResp struct {
+		Items []struct {
+			MeterID       int64    `json:"meter_id"`
+			MeterNumber   string   `json:"meternumber"`
+			OrgID         int64    `json:"org_id"`
+			PeriodID      int64    `json:"period_id"`
+			CurrentMeter  *float64 `json:"currentmeter"`
+			ReadingStatus string   `json:"reading_status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(recRec.Body.Bytes(), &recResp); err != nil {
+		t.Fatalf("failed to decode recorded response: %v", err)
+	}
+	if len(recResp.Items) != 1 {
+		t.Fatalf("expected 1 recorded reading for period 1, got %d: %+v", len(recResp.Items), recResp.Items)
+	}
+	if recResp.Items[0].MeterNumber != "HSG-0001" || recResp.Items[0].ReadingStatus != "recorded" {
+		t.Fatalf("expected HSG-0001 with status=recorded, got %+v", recResp.Items[0])
+	}
+	if recResp.Items[0].CurrentMeter == nil || *recResp.Items[0].CurrentMeter != 120 {
+		t.Fatalf("expected currentmeter=120, got %+v", recResp.Items[0].CurrentMeter)
+	}
+
+	// 2. status=pending for period_id=1 returns only meters without invoices in period 1 (HSG-0002)
+	reqPend := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/readings?period_id=1&status=pending", nil)
+	reqPend.Header.Set("Authorization", "Bearer valid-reader-token")
+	recPend := httptest.NewRecorder()
+	srv.ServeHTTP(recPend, reqPend)
+	if recPend.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for pending readings, got %d: %s", recPend.Code, recPend.Body.String())
+	}
+	var pendResp struct {
+		Items []struct {
+			MeterID       int64    `json:"meter_id"`
+			MeterNumber   string   `json:"meternumber"`
+			CurrentMeter  *float64 `json:"currentmeter"`
+			ReadingStatus string   `json:"reading_status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(recPend.Body.Bytes(), &pendResp); err != nil {
+		t.Fatalf("failed to decode pending response: %v", err)
+	}
+	if len(pendResp.Items) != 1 {
+		t.Fatalf("expected 1 pending reading for period 1, got %d: %+v", len(pendResp.Items), pendResp.Items)
+	}
+	if pendResp.Items[0].MeterNumber != "HSG-0002" || pendResp.Items[0].ReadingStatus != "pending" {
+		t.Fatalf("expected HSG-0002 with status=pending, got %+v", pendResp.Items[0])
+	}
+
+	// 3. Invalid status parameter -> 400 Bad Request
+	reqBadStatus := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/readings?period_id=1&status=unknown", nil)
+	reqBadStatus.Header.Set("Authorization", "Bearer valid-reader-token")
+	recBadStatus := httptest.NewRecorder()
+	srv.ServeHTTP(recBadStatus, reqBadStatus)
+	if recBadStatus.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for invalid status, got %d: %s", recBadStatus.Code, recBadStatus.Body.String())
+	}
+
+	// 4. Cross-tenant query (?org_id=2) with org1 staff token -> 403 Forbidden
+	reqCrossOrg := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/readings?period_id=1&org_id=2", nil)
+	reqCrossOrg.Header.Set("Authorization", "Bearer valid-reader-token")
+	recCrossOrg := httptest.NewRecorder()
+	srv.ServeHTTP(recCrossOrg, reqCrossOrg)
+	if recCrossOrg.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for cross-org readings query, got %d: %s", recCrossOrg.Code, recCrossOrg.Body.String())
+	}
+
+	// 5. Unauthorized role (citizen user) -> 403 Forbidden
+	reqUnauth := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/readings?period_id=1&status=recorded", nil)
+	reqUnauth.Header.Set("Authorization", "Bearer valid-user-token")
+	recUnauth := httptest.NewRecorder()
+	srv.ServeHTTP(recUnauth, reqUnauth)
+	if recUnauth.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for user role, got %d: %s", recUnauth.Code, recUnauth.Body.String())
+	}
+}
+
 
 

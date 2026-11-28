@@ -423,6 +423,43 @@ func (h *WaterBillRestHandler) ParseMeterOCR(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
+func (h *WaterBillRestHandler) ListReadings(c echo.Context) error {
+	var requestedOrgID *int64
+	if rawOrg := c.QueryParam("org_id"); rawOrg != "" {
+		parsed, err := strconv.ParseInt(rawOrg, 10, 64)
+		if err != nil {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid org_id parameter")
+		}
+		requestedOrgID = &parsed
+	}
+	var periodID *int64
+	if rawP := c.QueryParam("period_id"); rawP != "" {
+		parsed, err := strconv.ParseInt(rawP, 10, 64)
+		if err != nil || parsed <= 0 {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid period_id parameter")
+		}
+		periodID = &parsed
+	}
+	var routeID *int64
+	if rawR := c.QueryParam("route_id"); rawR != "" {
+		parsed, err := strconv.ParseInt(rawR, 10, 64)
+		if err != nil || parsed <= 0 {
+			return WriteProblem(c, http.StatusBadRequest, "Bad Request", "invalid route_id parameter")
+		}
+		routeID = &parsed
+	}
+	filter := application.MeterReadingFilter{
+		PeriodID: periodID,
+		Status:   c.QueryParam("status"),
+		RouteID:  routeID,
+	}
+	items, err := h.Service.ListReadings(c.Request().Context(), GetClaims(c), requestedOrgID, filter)
+	if err != nil {
+		return MapDomainError(c, err)
+	}
+	return c.JSON(http.StatusOK, map[string]any{"items": items})
+}
+
 func (h *WaterBillRestHandler) RecordMeterReading(c echo.Context) error {
 	reqDTO := dto.NewRecordMeterReadingDTO()
 	if err := reqDTO.Bind(c); err != nil {

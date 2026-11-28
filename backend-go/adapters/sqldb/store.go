@@ -589,6 +589,104 @@ SELECT id FROM ins
 	return application.WaterInvoice{}, application.ErrNotFound
 }
 
+func (s *Store) ListReadings(ctx context.Context, orgID *int64, filter application.MeterReadingFilter) ([]application.MeterReadingItem, error) {
+	status := strings.ToLower(strings.TrimSpace(filter.Status))
+	out := []application.MeterReadingItem{}
+
+	if status == "" || status == "recorded" {
+		const qRecorded = `
+SELECT inv.id, inv.inv_no, inv.org_id, inv.meter_id_fk,
+       COALESCE(m.meternumber, ''), COALESCE(m.submeter_name, ''),
+       COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''), m.route_id,
+       inv.inv_period_id_fk, COALESCE(p.inv_p_name, ''),
+       inv.lastmeter::float8, inv.currentmeter::float8, inv.water_used::float8,
+       inv.totalpaid::float8, inv.status, inv.recorded_at::text
+FROM tw_invoice inv
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN zones z ON z.id = m.undertake_zone_id
+LEFT JOIN invoice_period p ON p.id = inv.inv_period_id_fk
+WHERE ($1::bigint IS NULL OR inv.org_id = $1)
+  AND ($2::bigint IS NULL OR inv.inv_period_id_fk = $2)
+  AND ($3::bigint IS NULL OR m.route_id = $3)
+ORDER BY inv.id DESC
+`
+		rows, err := s.db.Query(ctx, qRecorded, orgID, filter.PeriodID, filter.RouteID)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var item application.MeterReadingItem
+			var current float64
+			if err := rows.Scan(
+				&item.ID, &item.InvoiceNo, &item.OrgID, &item.MeterID,
+				&item.MeterNumber, &item.HomeownerName,
+				&item.HouseNo, &item.ZoneName, &item.RouteID,
+				&item.PeriodID, &item.PeriodName,
+				&item.LastMeter, &current, &item.WaterUsed,
+				&item.TotalPaid, &item.InvoiceStatus, &item.RecordedAt,
+			); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			item.CurrentMeter = &current
+			item.ReadingStatus = "recorded"
+			out = append(out, item)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	if status == "" || status == "pending" {
+		const qPending = `
+SELECT m.org_id, m.meter_id, COALESCE(m.meternumber, ''), COALESCE(m.submeter_name, ''),
+       COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''), m.route_id,
+       m.last_meter_recording::float8
+FROM tw_meter_infos m
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN zones z ON z.id = m.undertake_zone_id
+LEFT JOIN tw_invoice inv
+  ON inv.meter_id_fk = m.meter_id
+  AND inv.org_id = m.org_id
+  AND ($2::bigint IS NULL OR inv.inv_period_id_fk = $2)
+WHERE ($1::bigint IS NULL OR m.org_id = $1)
+  AND ($3::bigint IS NULL OR m.route_id = $3)
+  AND inv.id IS NULL
+ORDER BY m.meter_id ASC
+`
+		rows, err := s.db.Query(ctx, qPending, orgID, filter.PeriodID, filter.RouteID)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var item application.MeterReadingItem
+			if err := rows.Scan(
+				&item.OrgID, &item.MeterID, &item.MeterNumber, &item.HomeownerName,
+				&item.HouseNo, &item.ZoneName, &item.RouteID,
+				&item.LastMeter,
+			); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if filter.PeriodID != nil {
+				item.PeriodID = *filter.PeriodID
+			}
+			item.ReadingStatus = "pending"
+			out = append(out, item)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	return out, nil
+}
+
 func (s *Store) ListInvoices(ctx context.Context, orgID *int64, status string, periodID *int64) ([]application.WaterInvoice, error) {
 	const q = `
 SELECT inv.id, inv.inv_no, COALESCE(inv.client_reading_id, ''), inv.org_id, COALESCE(o.org_name, 'อบต.ห้องแซง'),

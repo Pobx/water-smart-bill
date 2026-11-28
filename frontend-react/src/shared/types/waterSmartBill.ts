@@ -84,6 +84,27 @@ export interface InvoiceItem {
 
 export type WaterInvoiceItem = InvoiceItem
 
+export interface MeterReadingStatusItem {
+  id?: number
+  inv_no?: string
+  org_id: number
+  meter_id: number
+  meternumber: string
+  homeowner_name: string
+  house_no: string
+  zone_name: string
+  route_id?: number | null
+  period_id?: number
+  period_name?: string
+  lastmeter: number
+  currentmeter?: number
+  water_used?: number
+  totalpaid?: number
+  reading_status: 'recorded' | 'pending'
+  invoice_status?: string
+  recorded_at?: string
+}
+
 export function makeDefaultAvatarDataUri(name: string): string {
   void name
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120"><rect width="120" height="120" rx="60" fill="#0284c7"/><circle cx="60" cy="46" r="20" fill="#ffffff" opacity="0.95"/><path d="M26,104 C26,82 40,74 60,74 C80,74 94,82 94,104 Z" fill="#ffffff" opacity="0.95"/></svg>`

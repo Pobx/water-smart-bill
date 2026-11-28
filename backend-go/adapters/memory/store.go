@@ -726,6 +726,117 @@ func (s *Store) RecordMeterReading(_ context.Context, orgID int64, _ int64, cmd 
 	return inv, nil
 }
 
+func (s *Store) ListReadings(_ context.Context, orgID *int64, filter application.MeterReadingFilter) ([]application.MeterReadingItem, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var targetPeriodID int64
+	var targetPeriodName string
+	if filter.PeriodID != nil && *filter.PeriodID > 0 {
+		targetPeriodID = *filter.PeriodID
+		for _, p := range s.periods {
+			if p.ID == targetPeriodID {
+				targetPeriodName = p.PeriodName
+				break
+			}
+		}
+	} else {
+		for _, p := range s.periods {
+			if orgID != nil && p.OrgID != *orgID {
+				continue
+			}
+			if strings.EqualFold(p.Status, "active") {
+				targetPeriodID = p.ID
+				targetPeriodName = p.PeriodName
+				break
+			}
+		}
+	}
+
+	meterByID := make(map[int64]application.WaterMeter, len(s.meters))
+	for _, m := range s.meters {
+		if orgID != nil && m.OrgID != *orgID {
+			continue
+		}
+		if filter.RouteID != nil && *filter.RouteID > 0 {
+			if m.RouteID == nil || *m.RouteID != *filter.RouteID {
+				continue
+			}
+		}
+		meterByID[m.MeterID] = m
+	}
+
+	recordedMeterIDs := make(map[int64]bool)
+	recordedItems := make([]application.MeterReadingItem, 0)
+	for _, inv := range s.invoices {
+		if orgID != nil && inv.OrgID != *orgID {
+			continue
+		}
+		if targetPeriodID > 0 && inv.PeriodID != targetPeriodID {
+			continue
+		}
+		m, ok := meterByID[inv.MeterID]
+		if !ok {
+			continue
+		}
+		recordedMeterIDs[inv.MeterID] = true
+		cur := inv.CurrentMeter
+		recordedItems = append(recordedItems, application.MeterReadingItem{
+			ID:            inv.ID,
+			InvoiceNo:     inv.InvoiceNo,
+			OrgID:         inv.OrgID,
+			MeterID:       inv.MeterID,
+			MeterNumber:   inv.MeterNumber,
+			HomeownerName: inv.HomeownerName,
+			HouseNo:       inv.HouseNo,
+			ZoneName:      inv.ZoneName,
+			RouteID:       m.RouteID,
+			PeriodID:      inv.PeriodID,
+			PeriodName:    inv.PeriodName,
+			LastMeter:     inv.LastMeter,
+			CurrentMeter:  &cur,
+			WaterUsed:     inv.WaterUsed,
+			TotalPaid:     inv.TotalPaid,
+			ReadingStatus: "recorded",
+			InvoiceStatus: inv.Status,
+			RecordedAt:    inv.RecordedAt,
+		})
+	}
+
+	if filter.Status == "recorded" {
+		return recordedItems, nil
+	}
+
+	pendingItems := make([]application.MeterReadingItem, 0)
+	for _, m := range s.meters {
+		if _, ok := meterByID[m.MeterID]; !ok {
+			continue
+		}
+		if recordedMeterIDs[m.MeterID] {
+			continue
+		}
+		pendingItems = append(pendingItems, application.MeterReadingItem{
+			OrgID:         m.OrgID,
+			MeterID:       m.MeterID,
+			MeterNumber:   m.MeterNumber,
+			HomeownerName: m.HomeownerName,
+			HouseNo:       m.HouseNo,
+			ZoneName:      m.ZoneName,
+			RouteID:       m.RouteID,
+			PeriodID:      targetPeriodID,
+			PeriodName:    targetPeriodName,
+			LastMeter:     m.LastMeterRecording,
+			ReadingStatus: "pending",
+		})
+	}
+
+	if filter.Status == "pending" {
+		return pendingItems, nil
+	}
+
+	return append(recordedItems, pendingItems...), nil
+}
+
 func (s *Store) ListInvoices(_ context.Context, _ *int64, status string, periodID *int64) ([]application.WaterInvoice, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
