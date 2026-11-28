@@ -17,6 +17,8 @@
 | [0009](0009-rbac-left-menu-mobile-card-views-and-cash-only-policy.md) | ระบบควบคุมสิทธิ์รายบทบาท (RBAC Middleware & Left Menu), Mobile Card Views และนโยบายรับชำระด้วยเงินสดเท่านั้น (Cash-Only Policy) | 2026-11-24 | **Accepted** |
 | [0010](0010-golden-master-testing-auto-migrations-and-docker-automation.md) | ระบบทดสอบ Golden Master Suite, Auto-Migration Runner ด้วย Checksum และสคริปต์ Docker ข้ามแพลตฟอร์ม | 2026-11-24 | **Accepted** |
 
+| [0011](0011-new-features-debt-incident-report-ux-fixes.md) | ฟีเจอร์ใหม่จาก Feedback Review — Debt Management, Incident Reporting, Report Export และ UX Fixes | 2026-11-28 | **Proposed** |
+
 ---
 
 ## Standard ADR Template (บังคับใช้ทุกครั้ง)
