@@ -15,7 +15,13 @@ import {
   extractMeterReadingFromHint,
   validateMeterImageFile,
 } from '@/features/ocr/meterOcr'
-import type { InvoiceItem, OrganizationInfo, WaterMeterItem } from '@/shared/types/waterSmartBill'
+import type {
+  InvoiceItem,
+  MeterRoute,
+  OrganizationInfo,
+  WaterMeterItem,
+} from '@/shared/types/waterSmartBill'
+import { fieldReaderApi } from './fieldReaderApi'
 
 export interface UseFieldReaderParams {
   orgInfo: OrganizationInfo
@@ -26,6 +32,7 @@ export interface UseFieldReaderParams {
   periods: string[]
   invoices: InvoiceItem[]
   setInvoices: React.Dispatch<React.SetStateAction<InvoiceItem[]>>
+  token?: string
 }
 
 export function useFieldReader({
@@ -37,8 +44,12 @@ export function useFieldReader({
   periods,
   invoices,
   setInvoices,
+  token,
 }: UseFieldReaderParams) {
   const [isOfflineMode, setIsOfflineMode] = useState(true)
+  const [routes, setRoutes] = useState<MeterRoute[]>([])
+  const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
+  const [remoteRouteMeters, setRemoteRouteMeters] = useState<WaterMeterItem[] | null>(null)
   const [selectedMeterId, setSelectedMeterId] = useState(1)
   const [selectedPeriod, setSelectedPeriod] = useState(periods[0] ?? '11/2569')
   const [currentReadingStr, setCurrentReadingStr] = useState('135')
@@ -57,7 +68,55 @@ export function useFieldReader({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
-  const activeMeter = meters.find((m) => m.meter_id === selectedMeterId) ?? meters[0]
+  // Load meter routes for the current staff/organization
+  useEffect(() => {
+    let active = true
+    fieldReaderApi
+      .fetchMeterRoutes(token)
+      .then((items) => {
+        if (active) {
+          setRoutes(items)
+        }
+      })
+      .catch(() => {
+        // Offline or unauthenticated fallback: keep empty routes and show all meters
+      })
+    return () => {
+      active = false
+    }
+  }, [token])
+
+  // Fetch route-filtered meters when selectedRouteId changes (null = all routes)
+  useEffect(() => {
+    if (selectedRouteId === null) {
+      setRemoteRouteMeters(null)
+      return
+    }
+    let active = true
+    fieldReaderApi
+      .fetchMeters(selectedRouteId, token)
+      .then((items) => {
+        if (active) {
+          setRemoteRouteMeters(items)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRemoteRouteMeters(null)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [selectedRouteId, token])
+
+  const filteredMeters =
+    selectedRouteId === null
+      ? meters
+      : remoteRouteMeters ?? meters.filter((m) => m.route_id === selectedRouteId)
+
+  const activeMeter =
+    filteredMeters.find((m) => m.meter_id === selectedMeterId) ?? filteredMeters[0] ?? meters[0]
   const currentReadingNum = Math.max(0, Number(currentReadingStr) || 0)
   const unitsUsed = Math.max(0, currentReadingNum - (activeMeter?.last_meter_recording ?? 0))
   const liveBreakdown = calculateProgressiveWaterBill(unitsUsed, tiers, reserveFee, orgInfo.vat)
@@ -314,6 +373,10 @@ export function useFieldReader({
   return {
     isOfflineMode,
     setIsOfflineMode,
+    routes,
+    selectedRouteId,
+    setSelectedRouteId,
+    filteredMeters,
     selectedMeterId,
     setSelectedMeterId,
     selectedPeriod,

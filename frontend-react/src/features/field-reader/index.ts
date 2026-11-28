@@ -1,3 +1,4 @@
 export { FieldReaderScreen } from './FieldReaderScreen'
+export { MeterSearchCombobox } from './MeterSearchCombobox'
 export { useFieldReader } from './useFieldReader'
-export { fieldReaderApi } from './fieldReaderApi'
+export { fieldReaderApi, fetchMeterRoutes, fetchMeters } from './fieldReaderApi'

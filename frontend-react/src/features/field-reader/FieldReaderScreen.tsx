@@ -1,6 +1,7 @@
 import { formatThermalReceiptText, printViaWebBluetooth } from '@/features/printer/escpos'
 import { NumericInput, SearchableSelect } from '@/shared/ui'
 import type { WaterMeterItem } from '@/shared/types/waterSmartBill'
+import { MeterSearchCombobox } from './MeterSearchCombobox'
 import type { useFieldReader } from './useFieldReader'
 
 export interface FieldReaderScreenProps extends ReturnType<typeof useFieldReader> {
@@ -13,6 +14,10 @@ export function FieldReaderScreen({
   periods,
   isOfflineMode,
   setIsOfflineMode,
+  routes,
+  selectedRouteId,
+  setSelectedRouteId,
+  filteredMeters,
   selectedMeterId,
   setSelectedMeterId,
   selectedPeriod,
@@ -222,19 +227,48 @@ export function FieldReaderScreen({
           </div>
 
           <form onSubmit={handleRecordReadingAndOpenBluetooth} className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/* สายจดมิเตอร์ (Route Filter) + Searchable Meter Combobox */}
+            <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600">เลือกมิเตอร์น้ำ / บ้านเลขที่</label>
-                <SearchableSelect
+                <label
+                  htmlFor="meter-route-filter"
+                  className="mb-1 block text-xs font-medium text-slate-600"
+                >
+                  สายจดมิเตอร์ (Route Filter)
+                </label>
+                <select
+                  id="meter-route-filter"
+                  aria-label="สายจดมิเตอร์"
+                  value={selectedRouteId === null ? '' : String(selectedRouteId)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setSelectedRouteId(val === '' ? null : Number(val))
+                  }}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 focus:border-sky-400 focus:outline-none"
+                >
+                  <option value="">ทุกสายจดมิเตอร์ (ทั้งหมด {meters.length} มิเตอร์)</option>
+                  {routes.map((route) => (
+                    <option key={route.id} value={String(route.id)}>
+                      {route.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">
+                  เลือกมิเตอร์น้ำ / บ้านเลขที่ ({filteredMeters.length} รายการ)
+                </label>
+                <MeterSearchCombobox
                   ariaLabel="เลือกมิเตอร์น้ำ / บ้านเลขที่"
-                  options={meters.map((m) => ({
-                    value: m.meter_id,
-                    label: `${m.meternumber} — บ้าน ${m.house_no} (${m.homeowner_name})`,
-                  }))}
-                  value={selectedMeterId}
-                  onChange={(val) => setSelectedMeterId(val)}
+                  meters={filteredMeters}
+                  selectedMeterId={selectedMeterId}
+                  onSelect={(meterId) => setSelectedMeterId(meterId)}
                 />
               </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">ประจำงวดบิล</label>
                 <SearchableSelect

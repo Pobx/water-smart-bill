@@ -1,8 +1,23 @@
 import { apiRequest } from '@/shared/api/httpClient'
-import type { InvoiceItem } from '@/shared/types/waterSmartBill'
+import type { InvoiceItem, MeterRoute, WaterMeterItem } from '@/shared/types/waterSmartBill'
 import type { OfflineReadingRecord } from '@/features/offline/offlineStore'
 
 export const fieldReaderApi = {
+  fetchMeterRoutes: async (token?: string): Promise<MeterRoute[]> => {
+    const res = await apiRequest<{ items: MeterRoute[] }>('/api/v1/tabwater/meter-routes', {
+      method: 'GET',
+      token,
+    })
+    return res.items ?? []
+  },
+  fetchMeters: async (routeId?: number | null, token?: string): Promise<WaterMeterItem[]> => {
+    const query = routeId != null ? `?route_id=${encodeURIComponent(String(routeId))}` : ''
+    const res = await apiRequest<{ items: WaterMeterItem[] }>(`/api/v1/tabwater/meters${query}`, {
+      method: 'GET',
+      token,
+    })
+    return res.items ?? []
+  },
   syncOfflineReadings: (readings: OfflineReadingRecord[], token?: string) =>
     apiRequest<{ total_received: number; synced_count: number; invoices: InvoiceItem[] }>(
       '/api/v1/tabwater/readings/sync',
@@ -22,3 +37,6 @@ export const fieldReaderApi = {
       },
     ),
 }
+
+export const fetchMeterRoutes = fieldReaderApi.fetchMeterRoutes
+export const fetchMeters = fieldReaderApi.fetchMeters

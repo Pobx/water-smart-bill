@@ -33,6 +33,13 @@ export interface Homeowner {
   avatar_url: string
 }
 
+export interface MeterRoute {
+  id: number
+  org_id: number
+  name: string
+  staff_id?: number | null
+}
+
 export interface WaterMeterItem {
   meter_id: number
   meternumber: string
@@ -44,6 +51,7 @@ export interface WaterMeterItem {
   zone_name: string
   last_meter_recording: number
   status: 'active' | 'cutmeter'
+  route_id?: number | null
 }
 
 export interface InvoiceItem {

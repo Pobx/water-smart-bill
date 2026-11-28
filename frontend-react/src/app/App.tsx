@@ -75,6 +75,7 @@ export function App() {
     periods: tariffsMeters.periods,
     invoices: liffPortal.invoices,
     setInvoices: liffPortal.setInvoices,
+    token: auth.jwtToken,
   })
 
   // Filter menu items by user's current role (RBAC)
