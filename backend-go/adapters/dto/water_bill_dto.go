@@ -400,6 +400,7 @@ func (d *LiffLinkAccountDTO) ConvertToEntity() (application.LiffLinkAccountComma
 }
 
 type BulkPaymentDTO struct {
+	OrgID         *int64  `json:"org_id,omitempty"`
 	UserID        int64   `json:"user_id"`
 	InvoiceIDs    []int64 `json:"invoice_ids"`
 	Amount        float64 `json:"amount"`
@@ -423,6 +424,7 @@ func (d *BulkPaymentDTO) Bind(c echo.Context) error {
 
 func (d *BulkPaymentDTO) ConvertToEntity() (application.BulkPaymentCommand, error) {
 	cmd := application.BulkPaymentCommand{
+		OrgID:         d.OrgID,
 		UserID:        d.UserID,
 		InvoiceIDs:    d.InvoiceIDs,
 		Amount:        d.Amount,

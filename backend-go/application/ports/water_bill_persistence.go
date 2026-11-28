@@ -30,7 +30,7 @@ type WaterBillRepositoryInterface interface {
 	ListInvoices(ctx context.Context, orgID *int64, status string, periodID *int64) ([]application.WaterInvoice, error)
 	FindUnpaidInvoices(ctx context.Context, orgID *int64, userID int64) ([]application.WaterInvoice, error)
 	PayInvoice(ctx context.Context, orgID *int64, cmd application.PayWaterInvoiceCommand) (application.WaterInvoice, error)
-	PayInvoicesBulk(ctx context.Context, orgID int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error)
+	PayInvoicesBulk(ctx context.Context, orgID *int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error)
 	GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error)
 	LinkLiffAccount(ctx context.Context, cmd application.LiffLinkAccountCommand) (application.LiffResidentPortalData, error)
 }

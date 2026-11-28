@@ -923,7 +923,7 @@ RETURNING paid_at::text
 	return paidAt, nil
 }
 
-func (s *Store) PayInvoicesBulk(ctx context.Context, orgID int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
+func (s *Store) PayInvoicesBulk(ctx context.Context, orgID *int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
 	batchID := strings.ToLower(strings.TrimSpace(cmd.BatchID))
 	method := strings.TrimSpace(cmd.PaymentMethod)
 	if method == "" {
@@ -940,9 +940,9 @@ func (s *Store) PayInvoicesBulk(ctx context.Context, orgID int64, cmd applicatio
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Idempotency guard: check if batch_id already exists before inspecting invoices
+	// Idempotency guard: check if batch_id already exists (scoped by org_id when tenant-bound)
 	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM payment_batches WHERE id = $1::uuid)`, batchID).Scan(&exists); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM payment_batches WHERE id = $1::uuid AND ($2::bigint IS NULL OR org_id = $2))`, batchID, orgID).Scan(&exists); err != nil {
 		return application.PaymentBatchResult{}, err
 	}
 	if exists {
@@ -961,19 +961,24 @@ func (s *Store) PayInvoicesBulk(ctx context.Context, orgID int64, cmd applicatio
 		status       string
 	}
 
+	var resolvedOrgID int64
+	if orgID != nil {
+		resolvedOrgID = *orgID
+	}
+
 	locked := make([]lockedInvoice, 0, len(cmd.InvoiceIDs))
 	var serverTotal float64
 	const qLock = `
 SELECT inv.id, inv.org_id, inv.meter_id_fk, m.user_id,
        inv.paid::float8, inv.vat::float8, inv.reserve_meter::float8, inv.totalpaid::float8, inv.status
 FROM tw_invoice inv
-INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
-WHERE inv.id = $1
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk AND m.org_id = inv.org_id
+WHERE inv.id = $1 AND ($2::bigint IS NULL OR inv.org_id = $2)
 FOR UPDATE OF inv
 `
 	for _, invID := range cmd.InvoiceIDs {
 		var row lockedInvoice
-		err := tx.QueryRow(ctx, qLock, invID).Scan(
+		err := tx.QueryRow(ctx, qLock, invID, orgID).Scan(
 			&row.id, &row.orgID, &row.meterID, &row.userID,
 			&row.paid, &row.vat, &row.reserveMeter, &row.totalPaid, &row.status,
 		)
@@ -983,7 +988,9 @@ FOR UPDATE OF inv
 		if err != nil {
 			return application.PaymentBatchResult{}, err
 		}
-		if row.orgID != orgID {
+		if resolvedOrgID == 0 {
+			resolvedOrgID = row.orgID
+		} else if row.orgID != resolvedOrgID {
 			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d belongs to another organization", application.ErrForbidden, invID)
 		}
 		if row.userID != cmd.UserID {
@@ -998,11 +1005,11 @@ FOR UPDATE OF inv
 	}
 
 	serverTotal = math.Round(serverTotal*100) / 100
-	if cmd.Amount > 0 && cmd.Amount+0.01 < serverTotal {
+	if cmd.Amount+0.01 < serverTotal {
 		return application.PaymentBatchResult{}, fmt.Errorf("%w: payment amount %.2f is less than total due %.2f", application.ErrBadRequest, cmd.Amount, serverTotal)
 	}
 
-	paidAt, err := s.createPaymentBatch(ctx, tx, batchID, orgID, cmd.UserID, serverTotal, cashierID)
+	paidAt, err := s.createPaymentBatch(ctx, tx, batchID, resolvedOrgID, cmd.UserID, serverTotal, cashierID)
 	if err != nil {
 		return application.PaymentBatchResult{}, err
 	}
@@ -1024,25 +1031,25 @@ SET status = 'paid',
     cashier_id = $4,
     acc_trans_id_fk = $5,
     updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND org_id = $6
 `
 	const qUpdMeter = `
 UPDATE tw_meter_infos
 SET owe_count = GREATEST(0, owe_count - 1), updated_at = NOW()
-WHERE meter_id = $1
+WHERE meter_id = $1 AND org_id = $2
 `
 	for _, row := range locked {
 		var accID int64
 		if err := tx.QueryRow(ctx, qInsAcc,
-			orgID, row.meterID, row.paid, row.vat, row.reserveMeter, row.totalPaid,
+			resolvedOrgID, row.meterID, row.paid, row.vat, row.reserveMeter, row.totalPaid,
 			method, cashierID, batchID,
 		).Scan(&accID); err != nil {
 			return application.PaymentBatchResult{}, err
 		}
-		if _, err := tx.Exec(ctx, qUpdInv, row.id, method, receiptNo, cashierID, accID); err != nil {
+		if _, err := tx.Exec(ctx, qUpdInv, row.id, method, receiptNo, cashierID, accID, resolvedOrgID); err != nil {
 			return application.PaymentBatchResult{}, err
 		}
-		if _, err := tx.Exec(ctx, qUpdMeter, row.meterID); err != nil {
+		if _, err := tx.Exec(ctx, qUpdMeter, row.meterID, resolvedOrgID); err != nil {
 			return application.PaymentBatchResult{}, err
 		}
 	}
@@ -1063,10 +1070,10 @@ LEFT JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
 LEFT JOIN users u ON u.id = m.user_id
 LEFT JOIN zones z ON z.id = m.undertake_zone_id
 LEFT JOIN invoice_period p ON p.id = inv.inv_period_id_fk
-WHERE inv.id = ANY($1::bigint[])
+WHERE inv.id = ANY($1::bigint[]) AND inv.org_id = $2
 ORDER BY inv.inv_period_id_fk ASC, inv.id ASC
 `
-	rows, err := tx.Query(ctx, qFetch, cmd.InvoiceIDs)
+	rows, err := tx.Query(ctx, qFetch, cmd.InvoiceIDs, resolvedOrgID)
 	if err != nil {
 		return application.PaymentBatchResult{}, err
 	}
@@ -1099,7 +1106,7 @@ ORDER BY inv.inv_period_id_fk ASC, inv.id ASC
 
 	return application.PaymentBatchResult{
 		BatchID:       batchID,
-		OrgID:         orgID,
+		OrgID:         resolvedOrgID,
 		UserID:        cmd.UserID,
 		TotalAmount:   serverTotal,
 		PaymentMethod: method,

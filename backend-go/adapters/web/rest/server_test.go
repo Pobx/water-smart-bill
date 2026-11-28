@@ -53,6 +53,16 @@ func (stubVerifier) VerifyAccessToken(_ context.Context, rawToken string) (appli
 			ExpiresAt: time.Now().Add(30 * time.Minute),
 		}, nil
 	}
+	if rawToken == "valid-superadmin-token" {
+		return application.Claims{
+			JTI:       "jti-superadmin-token-1",
+			Subject:   "sub-superadmin",
+			Username:  "super_admin",
+			Roles:     []string{application.RoleSuperAdmin},
+			OrgID:     nil,
+			ExpiresAt: time.Now().Add(30 * time.Minute),
+		}, nil
+	}
 	return application.Claims{}, application.ErrUnauthorized
 }
 
@@ -1041,6 +1051,131 @@ func TestPayInvoicesBulk_PartialFailRollback(t *testing.T) {
 	_ = json.Unmarshal(outRec.Body.Bytes(), &outResp)
 	if len(outResp.Invoices) != 1 || outResp.Invoices[0].ID != 1 {
 		t.Fatalf("expected invoice 1 to remain unpaid after rollback, got %+v", outResp.Invoices)
+	}
+}
+
+func TestPayInvoicesBulk_ZeroOrUnderpaymentRejected(t *testing.T) {
+	repo := memory.NewStore()
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{
+			name:    "zero amount",
+			payload: `{"user_id":1,"invoice_ids":[1],"amount":0,"batch_id":"55555555-5555-4555-8555-555555555551"}`,
+		},
+		{
+			name:    "omitted amount",
+			payload: `{"user_id":1,"invoice_ids":[1],"batch_id":"55555555-5555-4555-8555-555555555552"}`,
+		},
+		{
+			name:    "underpayment amount",
+			payload: `{"user_id":1,"invoice_ids":[1],"amount":50.00,"batch_id":"55555555-5555-4555-8555-555555555553"}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/payments/bulk", strings.NewReader(tc.payload))
+			req.Header.Set("Authorization", "Bearer valid-admin-token")
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 Bad Request for %s, got %d: %s", tc.name, rec.Code, rec.Body.String())
+			}
+		})
+	}
+
+	// Invoice 1 must still be unpaid
+	outReq := httptest.NewRequest(http.MethodGet, "/api/v1/users/1/outstanding", nil)
+	outReq.Header.Set("Authorization", "Bearer valid-admin-token")
+	outRec := httptest.NewRecorder()
+	srv.ServeHTTP(outRec, outReq)
+	var outResp struct {
+		Invoices []application.WaterInvoice `json:"invoices"`
+	}
+	_ = json.Unmarshal(outRec.Body.Bytes(), &outResp)
+	if len(outResp.Invoices) != 1 || outResp.Invoices[0].ID != 1 {
+		t.Fatalf("expected invoice 1 to remain unpaid, got %+v", outResp.Invoices)
+	}
+}
+
+func TestPayInvoicesBulk_SuperAdminCrossOrg(t *testing.T) {
+	repo := memory.NewStore()
+	repo.SeedCrossOrgMeterAndInvoice(
+		application.WaterMeter{
+			MeterID:     200,
+			OrgID:       2,
+			UserID:      200,
+			MeterNumber: "ORG2-0001",
+			Status:      "active",
+			OweCount:    1,
+		},
+		application.WaterInvoice{
+			ID:        200,
+			InvoiceNo: "INV-ORG2-0001",
+			OrgID:     2,
+			MeterID:   200,
+			PeriodID:  1,
+			TotalPaid: 150.00,
+			Status:    "invoice",
+		},
+	)
+	svc := services.NewWaterBillService(repo)
+	srv := rest.NewServer(rest.ServerConfig{
+		AppEnv:       "development",
+		Verifier:     stubVerifier{},
+		Blacklist:    blacklist.NewStore(""),
+		WaterService: svc,
+		UploadDir:    t.TempDir(),
+	})
+
+	// Org 1 admin must be forbidden from paying Org 2 invoice
+	org1Payload := `{"user_id":200,"invoice_ids":[200],"amount":150.00,"batch_id":"66666666-6666-4666-8666-666666666661"}`
+	reqOrg1 := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/payments/bulk", strings.NewReader(org1Payload))
+	reqOrg1.Header.Set("Authorization", "Bearer valid-admin-token")
+	reqOrg1.Header.Set("Content-Type", "application/json")
+	recOrg1 := httptest.NewRecorder()
+	srv.ServeHTTP(recOrg1, reqOrg1)
+	if recOrg1.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for org 1 admin paying org 2 invoice, got %d: %s", recOrg1.Code, recOrg1.Body.String())
+	}
+
+	// Super admin can view outstanding and pay cross-org invoice consistently
+	outReq := httptest.NewRequest(http.MethodGet, "/api/v1/users/200/outstanding", nil)
+	outReq.Header.Set("Authorization", "Bearer valid-superadmin-token")
+	outRec := httptest.NewRecorder()
+	srv.ServeHTTP(outRec, outReq)
+	if outRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for super_admin outstanding, got %d: %s", outRec.Code, outRec.Body.String())
+	}
+
+	superPayload := `{"user_id":200,"invoice_ids":[200],"amount":150.00,"batch_id":"66666666-6666-4666-8666-666666666662"}`
+	reqSuper := httptest.NewRequest(http.MethodPost, "/api/v1/tabwater/payments/bulk", strings.NewReader(superPayload))
+	reqSuper.Header.Set("Authorization", "Bearer valid-superadmin-token")
+	reqSuper.Header.Set("Content-Type", "application/json")
+	recSuper := httptest.NewRecorder()
+	srv.ServeHTTP(recSuper, reqSuper)
+	if recSuper.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for super_admin cross-org bulk payment, got %d: %s", recSuper.Code, recSuper.Body.String())
+	}
+	var res struct {
+		OrgID    int64                      `json:"org_id"`
+		Invoices []application.WaterInvoice `json:"invoices"`
+	}
+	_ = json.Unmarshal(recSuper.Body.Bytes(), &res)
+	if res.OrgID != 2 || len(res.Invoices) != 1 || res.Invoices[0].Status != "paid" {
+		t.Fatalf("unexpected super_admin bulk payment result: %+v", res)
 	}
 }
 

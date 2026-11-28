@@ -315,7 +315,7 @@ func (s *WaterBillService) PayInvoicesBulk(ctx context.Context, claims applicati
 	if _, err := cmd.IsValid(); err != nil {
 		return application.PaymentBatchResult{}, err
 	}
-	orgID, _, err := resolveTenantOrgID(claims, nil)
+	scoped, err := claims.ResolveOrgScope(cmd.OrgID)
 	if err != nil {
 		return application.PaymentBatchResult{}, err
 	}
@@ -325,7 +325,7 @@ func (s *WaterBillService) PayInvoicesBulk(ctx context.Context, claims applicati
 	if strings.TrimSpace(cmd.PaymentMethod) == "" {
 		cmd.PaymentMethod = "cash"
 	}
-	return s.Repository.PayInvoicesBulk(ctx, orgID, cmd)
+	return s.Repository.PayInvoicesBulk(ctx, scoped, cmd)
 }
 
 func (s *WaterBillService) GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {

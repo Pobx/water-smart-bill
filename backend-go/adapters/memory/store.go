@@ -952,7 +952,7 @@ func (s *Store) FindUnpaidInvoices(_ context.Context, orgID *int64, userID int64
 	return out, nil
 }
 
-func (s *Store) PayInvoicesBulk(_ context.Context, orgID int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
+func (s *Store) PayInvoicesBulk(_ context.Context, orgID *int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -961,14 +961,12 @@ func (s *Store) PayInvoicesBulk(_ context.Context, orgID int64, cmd application.
 		return application.PaymentBatchResult{}, fmt.Errorf("%w: duplicate batch_id", application.ErrConflict)
 	}
 
-	userMeters := make(map[int64]bool)
-	for _, m := range s.meters {
-		if m.OrgID == orgID && m.UserID == cmd.UserID {
-			userMeters[m.MeterID] = true
-		}
+	// Phase 1: Validate all invoices BEFORE mutating any state (atomic rollback guarantee)
+	var resolvedOrgID int64
+	if orgID != nil {
+		resolvedOrgID = *orgID
 	}
 
-	// Phase 1: Validate all invoices BEFORE mutating any state (atomic rollback guarantee)
 	targetIndices := make([]int, 0, len(cmd.InvoiceIDs))
 	var serverTotal float64
 	for _, invID := range cmd.InvoiceIDs {
@@ -983,10 +981,19 @@ func (s *Store) PayInvoicesBulk(_ context.Context, orgID int64, cmd application.
 			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d not found", application.ErrNotFound, invID)
 		}
 		inv := s.invoices[idx]
-		if inv.OrgID != orgID {
+		if resolvedOrgID == 0 {
+			resolvedOrgID = inv.OrgID
+		} else if inv.OrgID != resolvedOrgID {
 			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d belongs to another organization", application.ErrForbidden, invID)
 		}
-		if !userMeters[inv.MeterID] {
+		meterOwnedByUser := false
+		for _, m := range s.meters {
+			if m.MeterID == inv.MeterID && m.OrgID == resolvedOrgID && m.UserID == cmd.UserID {
+				meterOwnedByUser = true
+				break
+			}
+		}
+		if !meterOwnedByUser {
 			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d does not belong to user %d", application.ErrForbidden, invID, cmd.UserID)
 		}
 		st := strings.ToLower(strings.TrimSpace(inv.Status))
@@ -998,7 +1005,7 @@ func (s *Store) PayInvoicesBulk(_ context.Context, orgID int64, cmd application.
 	}
 
 	serverTotal = math.Round(serverTotal*100) / 100
-	if cmd.Amount > 0 && cmd.Amount+0.01 < serverTotal {
+	if cmd.Amount+0.01 < serverTotal {
 		return application.PaymentBatchResult{}, fmt.Errorf("%w: payment amount %.2f is less than total due %.2f", application.ErrBadRequest, cmd.Amount, serverTotal)
 	}
 
@@ -1023,7 +1030,7 @@ func (s *Store) PayInvoicesBulk(_ context.Context, orgID int64, cmd application.
 		s.invoices[idx].PaidAt = paidAt
 		s.invoices[idx].ReceiptNo = receiptNo
 		for mIdx := range s.meters {
-			if s.meters[mIdx].MeterID == s.invoices[idx].MeterID && s.meters[mIdx].OweCount > 0 {
+			if s.meters[mIdx].MeterID == s.invoices[idx].MeterID && s.meters[mIdx].OrgID == resolvedOrgID && s.meters[mIdx].OweCount > 0 {
 				s.meters[mIdx].OweCount--
 			}
 		}
@@ -1032,7 +1039,7 @@ func (s *Store) PayInvoicesBulk(_ context.Context, orgID int64, cmd application.
 
 	result := application.PaymentBatchResult{
 		BatchID:       batchID,
-		OrgID:         orgID,
+		OrgID:         resolvedOrgID,
 		UserID:        cmd.UserID,
 		TotalAmount:   serverTotal,
 		PaymentMethod: method,
@@ -1043,6 +1050,13 @@ func (s *Store) PayInvoicesBulk(_ context.Context, orgID int64, cmd application.
 	}
 	s.paymentBatches[batchID] = result
 	return result, nil
+}
+
+func (s *Store) SeedCrossOrgMeterAndInvoice(meter application.WaterMeter, inv application.WaterInvoice) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.meters = append(s.meters, meter)
+	s.invoices = append(s.invoices, inv)
 }
 
 func (s *Store) GetLiffPortalData(_ context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {

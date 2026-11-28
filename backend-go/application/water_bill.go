@@ -576,6 +576,7 @@ type OutstandingBalance struct {
 }
 
 type BulkPaymentCommand struct {
+	OrgID         *int64  `json:"org_id,omitempty"`
 	UserID        int64   `json:"user_id"`
 	InvoiceIDs    []int64 `json:"invoice_ids"`
 	Amount        float64 `json:"amount"`
@@ -601,8 +602,8 @@ func (cmd BulkPaymentCommand) IsValid() (bool, error) {
 		}
 		seen[id] = struct{}{}
 	}
-	if cmd.Amount < 0 {
-		return false, fmt.Errorf("%w: amount must be >= 0", ErrBadRequest)
+	if cmd.Amount <= 0 {
+		return false, fmt.Errorf("%w: amount must be > 0", ErrBadRequest)
 	}
 	batchID := strings.TrimSpace(cmd.BatchID)
 	if !uuidPattern.MatchString(batchID) {
