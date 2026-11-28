@@ -78,7 +78,7 @@ export function App() {
     auth.jwtToken,
     (vat) => masterData.setOrgInfo((prev) => ({ ...prev, vat }))
   )
-  const liffPortal = useLiffPortal(tariffsMeters.meters)
+  const liffPortal = useLiffPortal(tariffsMeters.meters, auth.jwtToken)
   const fieldReader = useFieldReader({
     orgInfo: masterData.orgInfo,
     meters: tariffsMeters.meters,

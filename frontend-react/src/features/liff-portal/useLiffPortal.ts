@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { InvoiceItem, WaterMeterItem } from '@/shared/types/waterSmartBill'
+import { liffPortalApi, type DebtNotice } from './liffPortalApi'
 
-export function useLiffPortal(meters: WaterMeterItem[]) {
+export function useLiffPortal(meters: WaterMeterItem[], token?: string) {
   const [invoices, setInvoices] = useState<InvoiceItem[]>([
     {
       id: 1,
@@ -49,9 +50,35 @@ export function useLiffPortal(meters: WaterMeterItem[]) {
     },
   ])
   const [liffSelectedMeterNo, setLiffSelectedMeterNo] = useState('HSG-0001')
+  const [debtNotices, setDebtNotices] = useState<DebtNotice[]>([])
 
   const liffInvoices = invoices.filter((i) => i.meternumber === liffSelectedMeterNo)
   const liffMeter = meters.find((m) => m.meternumber === liffSelectedMeterNo) ?? meters[0]
+
+  useEffect(() => {
+    const userId = liffMeter?.user_id
+    if (!token || !userId || userId <= 0) {
+      setDebtNotices([])
+      return
+    }
+    let cancelled = false
+    liffPortalApi
+      .fetchMyDebtNotices(userId, token)
+      .then((items) => {
+        if (!cancelled) {
+          setDebtNotices(items)
+        }
+      })
+      .catch(() => {
+        // Graceful offline/unauthenticated fallback
+        if (!cancelled) {
+          setDebtNotices([])
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [liffMeter?.user_id, token])
 
   return {
     invoices,
@@ -60,5 +87,6 @@ export function useLiffPortal(meters: WaterMeterItem[]) {
     setLiffSelectedMeterNo,
     liffInvoices,
     liffMeter,
+    debtNotices,
   }
 }

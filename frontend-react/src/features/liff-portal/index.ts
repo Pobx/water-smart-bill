@@ -1,3 +1,3 @@
 export { LiffPortalScreen } from './LiffPortalScreen'
 export { useLiffPortal } from './useLiffPortal'
-export { liffPortalApi } from './liffPortalApi'
+export { liffPortalApi, fetchMyDebtNotices, type DebtNotice } from './liffPortalApi'
