@@ -585,6 +585,28 @@ func TestListReadings_FilterByStatus(t *testing.T) {
 	if recUnauth.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 Forbidden for user role, got %d: %s", recUnauth.Code, recUnauth.Body.String())
 	}
+
+	// 6. Omitted period_id resolves to active period (period 1: 11/2569)
+	reqDefaultPend := httptest.NewRequest(http.MethodGet, "/api/v1/tabwater/readings?status=pending", nil)
+	reqDefaultPend.Header.Set("Authorization", "Bearer valid-reader-token")
+	recDefaultPend := httptest.NewRecorder()
+	srv.ServeHTTP(recDefaultPend, reqDefaultPend)
+	if recDefaultPend.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for default-period pending readings, got %d: %s", recDefaultPend.Code, recDefaultPend.Body.String())
+	}
+	var defaultPendResp struct {
+		Items []struct {
+			MeterNumber   string `json:"meternumber"`
+			PeriodID      int64  `json:"period_id"`
+			ReadingStatus string `json:"reading_status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(recDefaultPend.Body.Bytes(), &defaultPendResp); err != nil {
+		t.Fatalf("failed to decode default pending response: %v", err)
+	}
+	if len(defaultPendResp.Items) != 1 || defaultPendResp.Items[0].MeterNumber != "HSG-0002" || defaultPendResp.Items[0].PeriodID != 1 {
+		t.Fatalf("expected 1 pending meter HSG-0002 for active period 1, got %+v", defaultPendResp.Items)
+	}
 }
 
 

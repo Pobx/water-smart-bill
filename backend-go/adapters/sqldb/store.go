@@ -593,6 +593,32 @@ func (s *Store) ListReadings(ctx context.Context, orgID *int64, filter applicati
 	status := strings.ToLower(strings.TrimSpace(filter.Status))
 	out := []application.MeterReadingItem{}
 
+	resolvedPeriodID := filter.PeriodID
+	var resolvedPeriodName string
+	if resolvedPeriodID == nil || *resolvedPeriodID <= 0 {
+		const qActivePeriod = `
+SELECT id, COALESCE(inv_p_name, '')
+FROM invoice_period
+WHERE ($1::bigint IS NULL OR org_id = $1)
+  AND LOWER(status) = 'active'
+ORDER BY id DESC
+LIMIT 1
+`
+		var activeID int64
+		if err := s.db.QueryRow(ctx, qActivePeriod, orgID).Scan(&activeID, &resolvedPeriodName); err == nil && activeID > 0 {
+			resolvedPeriodID = &activeID
+		}
+	} else {
+		const qPeriodName = `
+SELECT COALESCE(inv_p_name, '')
+FROM invoice_period
+WHERE id = $1
+  AND ($2::bigint IS NULL OR org_id = $2)
+LIMIT 1
+`
+		_ = s.db.QueryRow(ctx, qPeriodName, *resolvedPeriodID, orgID).Scan(&resolvedPeriodName)
+	}
+
 	if status == "" || status == "recorded" {
 		const qRecorded = `
 SELECT inv.id, inv.inv_no, inv.org_id, inv.meter_id_fk,
@@ -600,7 +626,7 @@ SELECT inv.id, inv.inv_no, inv.org_id, inv.meter_id_fk,
        COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''), m.route_id,
        inv.inv_period_id_fk, COALESCE(p.inv_p_name, ''),
        inv.lastmeter::float8, inv.currentmeter::float8, inv.water_used::float8,
-       inv.totalpaid::float8, inv.status, inv.recorded_at::text
+       inv.totalpaid::float8, inv.status, COALESCE(inv.recorded_at::text, '')
 FROM tw_invoice inv
 INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
 LEFT JOIN users u ON u.id = m.user_id
@@ -611,7 +637,7 @@ WHERE ($1::bigint IS NULL OR inv.org_id = $1)
   AND ($3::bigint IS NULL OR m.route_id = $3)
 ORDER BY inv.id DESC
 `
-		rows, err := s.db.Query(ctx, qRecorded, orgID, filter.PeriodID, filter.RouteID)
+		rows, err := s.db.Query(ctx, qRecorded, orgID, resolvedPeriodID, filter.RouteID)
 		if err != nil {
 			return nil, err
 		}
@@ -657,7 +683,7 @@ WHERE ($1::bigint IS NULL OR m.org_id = $1)
   AND inv.id IS NULL
 ORDER BY m.meter_id ASC
 `
-		rows, err := s.db.Query(ctx, qPending, orgID, filter.PeriodID, filter.RouteID)
+		rows, err := s.db.Query(ctx, qPending, orgID, resolvedPeriodID, filter.RouteID)
 		if err != nil {
 			return nil, err
 		}
@@ -671,9 +697,10 @@ ORDER BY m.meter_id ASC
 				rows.Close()
 				return nil, err
 			}
-			if filter.PeriodID != nil {
-				item.PeriodID = *filter.PeriodID
+			if resolvedPeriodID != nil {
+				item.PeriodID = *resolvedPeriodID
 			}
+			item.PeriodName = resolvedPeriodName
 			item.ReadingStatus = "pending"
 			out = append(out, item)
 		}

@@ -17,6 +17,7 @@ import {
 } from '@/features/ocr/meterOcr'
 import type {
   InvoiceItem,
+  MeterReadingStatusItem,
   MeterRoute,
   OrganizationInfo,
   WaterMeterItem,
@@ -50,7 +51,8 @@ export function useFieldReader({
   const [routes, setRoutes] = useState<MeterRoute[]>([])
   const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null)
   const [remoteRouteMeters, setRemoteRouteMeters] = useState<WaterMeterItem[] | null>(null)
-  const [selectedMeterId, setSelectedMeterId] = useState(1)
+  const [remoteReadings, setRemoteReadings] = useState<MeterReadingStatusItem[] | null>(null)
+  const [selectedMeterId, setSelectedMeterIdState] = useState(1)
   const [selectedPeriod, setSelectedPeriod] = useState(periods[0] ?? '11/2569')
   const [readingTab, setReadingTab] = useState<'pending' | 'recorded'>('pending')
   const [editingInvoiceId, setEditingInvoiceId] = useState<number | null>(null)
@@ -119,13 +121,45 @@ export function useFieldReader({
 
   // Current (unfinalized) period is periods[0]
   const isCurrentPeriodEditable = selectedPeriod === (periods[0] ?? '11/2569')
+  const periodIndex = periods.indexOf(selectedPeriod)
+  const selectedPeriodId = periodIndex >= 0 ? periodIndex + 1 : 1
 
-  // Reset edit mode when switching billing period
+  // Fetch remote recorded/pending readings when online/token available, with offline fallback
+  useEffect(() => {
+    let active = true
+    fieldReaderApi
+      .fetchReadings({ periodId: selectedPeriodId, routeId: selectedRouteId }, token)
+      .then((items) => {
+        if (active) {
+          setRemoteReadings(items)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRemoteReadings(null)
+        }
+      })
+    return () => {
+      active = false
+    }
+  }, [selectedPeriodId, selectedRouteId, token])
+
+  // Reset edit mode when switching billing period or route
   useEffect(() => {
     setEditingInvoiceId(null)
-  }, [selectedPeriod])
+  }, [selectedPeriod, selectedRouteId])
 
-  // Derive recorded vs pending lists for the active period & filtered meters (offline-first)
+  // Wrapper that resets edit mode if the user switches to a different meter
+  function setSelectedMeterId(meterId: number) {
+    setSelectedMeterIdState(meterId)
+    setEditingInvoiceId((prev) => {
+      if (prev === null) return null
+      const inv = invoices.find((item) => item.id === prev)
+      return inv && inv.meter_id === meterId ? prev : null
+    })
+  }
+
+  // Derive recorded vs pending lists for the active period & filtered meters (online + offline-first fallback)
   const filteredMeterIds = new Set(filteredMeters.map((m) => m.meter_id))
   const recordedInvoiceByMeter = new Map<number, InvoiceItem>()
   for (const inv of invoices) {
@@ -135,17 +169,75 @@ export function useFieldReader({
       }
     }
   }
+  if (remoteReadings !== null) {
+    for (const item of remoteReadings) {
+      if (item.reading_status === 'recorded' && !recordedInvoiceByMeter.has(item.meter_id)) {
+        recordedInvoiceByMeter.set(item.meter_id, {
+          id: item.id ?? -item.meter_id,
+          inv_no: item.inv_no ?? '',
+          period_name: item.period_name || selectedPeriod,
+          meter_id: item.meter_id,
+          meternumber: item.meternumber,
+          homeowner_name: item.homeowner_name,
+          house_no: item.house_no,
+          zone_name: item.zone_name,
+          lastmeter: item.lastmeter,
+          currentmeter: item.currentmeter ?? item.lastmeter,
+          water_used: item.water_used ?? 0,
+          paid: item.totalpaid ?? 0,
+          reserve_meter: 0,
+          vat: 0,
+          totalpaid: item.totalpaid ?? 0,
+          reading_photo_url: '',
+          ocr_text: '',
+          ocr_confidence: 0,
+          status: item.invoice_status === 'paid' ? 'paid' : 'invoice',
+          recorded_at: item.recorded_at ?? '',
+        })
+      }
+    }
+  }
   const recordedReadings = Array.from(recordedInvoiceByMeter.values())
-  const pendingReadings = filteredMeters.filter((m) => !recordedInvoiceByMeter.has(m.meter_id))
+  const pendingReadings: WaterMeterItem[] =
+    remoteReadings !== null
+      ? remoteReadings
+          .filter(
+            (item) =>
+              item.reading_status === 'pending' && !recordedInvoiceByMeter.has(item.meter_id),
+          )
+          .map((item) => {
+            const localMatch = filteredMeters.find((m) => m.meter_id === item.meter_id)
+            return (
+              localMatch ?? {
+                meter_id: item.meter_id,
+                meternumber: item.meternumber,
+                factory_no: '',
+                user_id: 0,
+                homeowner_name: item.homeowner_name,
+                house_no: item.house_no,
+                zone_id: 0,
+                zone_name: item.zone_name,
+                last_meter_recording: item.lastmeter,
+                status: 'active',
+                route_id: item.route_id ?? null,
+              }
+            )
+          })
+      : filteredMeters.filter((m) => !recordedInvoiceByMeter.has(m.meter_id))
 
   const editingInvoice =
-    editingInvoiceId !== null ? invoices.find((inv) => inv.id === editingInvoiceId) ?? null : null
+    editingInvoiceId !== null
+      ? recordedReadings.find((inv) => inv.id === editingInvoiceId) ??
+        invoices.find((inv) => inv.id === editingInvoiceId) ??
+        null
+      : null
 
   const activeMeter =
     filteredMeters.find((m) => m.meter_id === selectedMeterId) ?? filteredMeters[0] ?? meters[0]
-  const effectiveLastMeter = editingInvoice
-    ? editingInvoice.lastmeter
-    : activeMeter?.last_meter_recording ?? 0
+  const effectiveLastMeter =
+    editingInvoice && editingInvoice.meter_id === activeMeter?.meter_id
+      ? editingInvoice.lastmeter
+      : activeMeter?.last_meter_recording ?? 0
   const currentReadingNum = Math.max(0, Number(currentReadingStr) || 0)
   const unitsUsed = Math.max(0, currentReadingNum - effectiveLastMeter)
   const liveBreakdown = calculateProgressiveWaterBill(unitsUsed, tiers, reserveFee, orgInfo.vat)
@@ -153,7 +245,7 @@ export function useFieldReader({
 
   function handleStartEditReading(invoice: InvoiceItem) {
     if (!isCurrentPeriodEditable || invoice.status === 'paid') return
-    setSelectedMeterId(invoice.meter_id)
+    setSelectedMeterIdState(invoice.meter_id)
     setCurrentReadingStr(String(invoice.currentmeter))
     setEditingInvoiceId(invoice.id)
   }
@@ -163,7 +255,7 @@ export function useFieldReader({
   }
 
   function handleSelectPendingMeter(meter: WaterMeterItem) {
-    setSelectedMeterId(meter.meter_id)
+    setSelectedMeterIdState(meter.meter_id)
     setEditingInvoiceId(null)
     setCurrentReadingStr(String(meter.last_meter_recording))
   }
@@ -335,9 +427,36 @@ export function useFieldReader({
     if (!activeMeter) return
     const nowStr = new Date().toISOString().slice(0, 16).replace('T', ' ')
 
-    if (editingInvoice && isCurrentPeriodEditable && editingInvoice.status !== 'paid') {
+    if (
+      editingInvoice &&
+      isCurrentPeriodEditable &&
+      editingInvoice.status !== 'paid' &&
+      editingInvoice.meter_id === activeMeter.meter_id
+    ) {
+      const queuedEdit = enqueueOfflineReading({
+        inv_no: editingInvoice.inv_no,
+        meter_id: activeMeter.meter_id,
+        meternumber: activeMeter.meternumber,
+        homeowner_name: activeMeter.homeowner_name,
+        house_no: activeMeter.house_no,
+        period_id: selectedPeriodId,
+        period_name: selectedPeriod,
+        last_meter: effectiveLastMeter,
+        current_meter: currentReadingNum,
+        water_used: liveBreakdown.units_used,
+        paid: liveBreakdown.water_charge,
+        reserve_meter: liveBreakdown.reserve_fee,
+        vat: liveBreakdown.vat_amount,
+        totalpaid: liveBreakdown.total_payable,
+        reading_photo_url: capturedPhotoUrl ?? editingInvoice.reading_photo_url,
+        ocr_text: String(currentReadingNum).padStart(5, '0'),
+        ocr_confidence: ocrConfidence,
+      })
+      setOfflineQueue(getOfflineQueue())
+
       const updatedInv: InvoiceItem = {
         ...editingInvoice,
+        client_reading_id: queuedEdit.client_reading_id,
         lastmeter: effectiveLastMeter,
         currentmeter: currentReadingNum,
         water_used: liveBreakdown.units_used,
@@ -350,7 +469,12 @@ export function useFieldReader({
         ocr_confidence: ocrConfidence,
         recorded_at: nowStr,
       }
-      setInvoices(invoices.map((inv) => (inv.id === editingInvoice.id ? updatedInv : inv)))
+      setInvoices((prev) => {
+        const exists = prev.some((inv) => inv.id === editingInvoice.id)
+        return exists
+          ? prev.map((inv) => (inv.id === editingInvoice.id ? updatedInv : inv))
+          : [updatedInv, ...prev]
+      })
       setMeters(
         meters.map((m) =>
           m.meter_id === activeMeter.meter_id ? { ...m, last_meter_recording: currentReadingNum } : m,

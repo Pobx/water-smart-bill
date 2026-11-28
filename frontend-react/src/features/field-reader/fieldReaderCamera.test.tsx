@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from '@/app/App'
+import { getOfflineQueue } from '@/features/offline/offlineStore'
 import { fieldReaderApi } from './fieldReaderApi'
 
 async function signInAsFieldReader() {
@@ -169,6 +170,89 @@ describe('Field Reader Recorded / Pending Tabs & Edit Mode', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /แก้ไข/i })).not.toBeInTheDocument()
     })
+  })
+
+  it('calls GET /api/v1/tabwater/readings via useFieldReader when online and merges remote readings', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/api/v1/tabwater/readings')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json' },
+          json: async () => ({
+            items: [
+              {
+                id: 99,
+                inv_no: 'INV-REMOTE-99',
+                org_id: 1,
+                meter_id: 99,
+                meternumber: 'HSG-0099',
+                homeowner_name: 'นายออนไลน์ ทดสอบ',
+                house_no: '99/9',
+                zone_name: 'หมู่ที่ 1',
+                period_id: 1,
+                period_name: '11/2569',
+                lastmeter: 50,
+                currentmeter: 65,
+                water_used: 15,
+                totalpaid: 101.65,
+                reading_status: 'recorded',
+                invoice_status: 'invoice',
+              },
+            ],
+          }),
+        })
+      }
+      return Promise.reject(new TypeError('Offline fallback'))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    await signInAsFieldReader()
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/tabwater/readings?period_id=1'),
+        expect.objectContaining({ method: 'GET' }),
+      )
+      // Local HSG-0001 + remote HSG-0099 => 2 recorded items
+      expect(screen.getByRole('tab', { name: /บันทึกแล้ว \(2\)/ })).toBeInTheDocument()
+    })
+  })
+
+  it('persists edited reading to offlineStore and cancels edit mode when switching meter', async () => {
+    localStorage.clear()
+    render(<App />)
+    await signInAsFieldReader()
+
+    // Open recorded tab and start editing HSG-0001
+    fireEvent.click(await screen.findByRole('tab', { name: /บันทึกแล้ว \(1\)/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /แก้ไข/i }))
+    expect(screen.getByText(/โหมดแก้ไขข้อมูลการจดมิเตอร์งวดปัจจุบัน/)).toBeInTheDocument()
+
+    // Switching to another meter cancels edit mode so edits cannot apply to wrong meter
+    const meterCombobox = screen.getByRole('combobox', { name: 'เลือกมิเตอร์น้ำ / บ้านเลขที่' })
+    fireEvent.focus(meterCombobox)
+    fireEvent.change(meterCombobox, { target: { value: 'HSG-0002' } })
+    fireEvent.click(await screen.findByRole('option', { name: /HSG-0002/ }))
+    await waitFor(() => {
+      expect(screen.queryByText(/โหมดแก้ไขข้อมูลการจดมิเตอร์งวดปัจจุบัน/)).not.toBeInTheDocument()
+    })
+
+    // Re-enter edit mode on HSG-0001, update reading to 130, and submit -> must enqueue in offlineStore
+    fireEvent.click(await screen.findByRole('button', { name: /แก้ไข/i }))
+    const readingInput = screen.getByLabelText('เลขมิเตอร์ครั้งนี้') as HTMLInputElement
+    fireEvent.change(readingInput, { target: { value: '130' } })
+    fireEvent.click(screen.getByRole('button', { name: /บันทึกการแก้ไขมิเตอร์/ }))
+
+    await waitFor(() => {
+      const queue = getOfflineQueue()
+      expect(queue.length).toBeGreaterThanOrEqual(1)
+      expect(queue[0].meternumber).toBe('HSG-0001')
+      expect(queue[0].current_meter).toBe(130)
+      expect(queue[0].last_meter).toBe(105)
+    })
+    localStorage.clear()
   })
 
   it('calls GET /api/v1/tabwater/readings with period_id, status, and route_id via fieldReaderApi.fetchReadings', async () => {
