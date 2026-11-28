@@ -339,4 +339,129 @@ describe('debt-management feature (Admin + Staff)', () => {
       })
     )
   })
+
+  it('opens CreateDebtNoticeModal from DebtNoticeListScreen without hook errors, resets state on close/reopen, and navigates to MeterCutScreen', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/debt-notices')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [mockPendingNotice, mockCutNotice] }),
+        })
+      }
+      if (url === '/api/v1/users/1/outstanding') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ invoices: mockUnpaidInvoices, total: 128.4 }),
+        })
+      }
+      return Promise.reject(new Error(`Unexpected URL: ${url}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <DebtNoticeListScreen
+        token="test-token"
+        currentRole="admin"
+        homeowners={mockHomeowners}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/นายสมหมาย ใจดี/i).length).toBeGreaterThan(0)
+    })
+
+    // Transition CreateDebtNoticeModal open: false -> true
+    fireEvent.click(screen.getByRole('button', { name: /\+ สร้างใบแจ้งเตือนหนี้/i }))
+    expect(screen.getByRole('dialog', { name: /สร้างใบแจ้งเตือนหนี้ค้างชำระ/i })).toBeInTheDocument()
+
+    // Filter and select homeowner inside modal
+    fireEvent.change(screen.getByLabelText(/ค้นหาและเลือกลูกบ้าน/i), { target: { value: 'สมหมาย' } })
+    fireEvent.click(screen.getByRole('button', { name: /นายสมหมาย ใจดี/i }))
+    expect(await screen.findByText(/INV-2569-09-0001/i)).toBeInTheDocument()
+
+    // Close and reopen -> state must be cleanly reset
+    fireEvent.click(screen.getByRole('button', { name: /ยกเลิก/i }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /\+ สร้างใบแจ้งเตือนหนี้/i }))
+    expect((screen.getByLabelText(/ค้นหาและเลือกลูกบ้าน/i) as HTMLInputElement).value).toBe('')
+    expect(screen.queryByText(/INV-2569-09-0001/i)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /ยกเลิก/i }))
+
+    // Click cut meter action from list -> transitions to MeterCutScreen
+    fireEvent.click(screen.getByRole('button', { name: /^ตัดมิเตอร์$/ }))
+    expect(screen.getByLabelText(/เลขมิเตอร์ล่าสุด/i)).toBeInTheDocument()
+
+    // Return back to list
+    fireEvent.click(screen.getByRole('button', { name: /กลับหน้ารายการ/i }))
+    expect(screen.getByRole('button', { name: /^ตัดมิเตอร์$/ })).toBeInTheDocument()
+  })
+
+  it('ignores stale out-of-order onFetchOutstanding responses when switching homeowners rapidly', async () => {
+    let resolveUser1!: (value: OutstandingBalanceResponse) => void
+    let resolveUser2!: (value: OutstandingBalanceResponse) => void
+
+    const onFetchOutstanding = vi.fn().mockImplementation((userId: number) => {
+      if (userId === 1) {
+        return new Promise<OutstandingBalanceResponse>((resolve) => {
+          resolveUser1 = resolve
+        })
+      }
+      return new Promise<OutstandingBalanceResponse>((resolve) => {
+        resolveUser2 = resolve
+      })
+    })
+
+    const user2Invoice: WaterInvoiceItem = {
+      ...mockUnpaidInvoices[0],
+      id: 22,
+      inv_no: 'INV-USER2-0001',
+      totalpaid: 99.5,
+    }
+
+    render(
+      <CreateDebtNoticeModal
+        open={true}
+        homeowners={mockHomeowners}
+        onFetchOutstanding={onFetchOutstanding}
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+
+    // Rapidly click user 1, then user 2 before user 1 finishes
+    fireEvent.click(screen.getByRole('button', { name: /นายสมหมาย ใจดี/i }))
+    fireEvent.click(screen.getByRole('button', { name: /นางมาลี รักน้ำ/i }))
+
+    // User 2 resolves first
+    resolveUser2({ user_id: 2, invoices: [user2Invoice], total: 99.5 })
+    expect(await screen.findByText(/INV-USER2-0001/i)).toBeInTheDocument()
+
+    // Stale user 1 response resolves later -> must be ignored
+    resolveUser1({ user_id: 1, invoices: mockUnpaidInvoices, total: 128.4 })
+    await waitFor(() => {
+      expect(screen.getByText(/INV-USER2-0001/i)).toBeInTheDocument()
+      expect(screen.queryByText(/INV-2569-09-0001/i)).not.toBeInTheDocument()
+    })
+  })
+
+  it('surfaces a visible warning alert and keeps restore disabled when live outstanding check fails in MeterCutScreen', async () => {
+    const onFetchOutstanding = vi.fn().mockRejectedValue(new Error('HTTP 503'))
+
+    render(
+      <MeterCutScreen
+        notice={mockCutNotice}
+        onFetchOutstanding={onFetchOutstanding}
+        onCut={vi.fn()}
+        onRestore={vi.fn()}
+      />
+    )
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/ไม่สามารถตรวจสอบยอดค้างชำระล่าสุดได้/i)
+    expect(alert).toHaveTextContent(/HTTP 503/i)
+    expect(screen.getByRole('button', { name: /บันทึกเปิดคืน/i })).toBeDisabled()
+  })
 })

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Homeowner } from '@/shared/types/waterSmartBill'
 import type {
   CreateDebtNoticePayload,
@@ -28,6 +28,21 @@ export function CreateDebtNoticeModal({
   const [loadingOutstanding, setLoadingOutstanding] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const requestSeqRef = useRef(0)
+
+  // Reset modal state cleanly whenever modal closes so reopening starts fresh
+  useEffect(() => {
+    if (!open) {
+      requestSeqRef.current += 1
+      setSearchQuery('')
+      setSelectedUser(null)
+      setOutstanding(null)
+      setSelectedInvoiceIds([])
+      setLoadingOutstanding(false)
+      setSubmitting(false)
+      setError(null)
+    }
+  }, [open])
 
   const filteredHomeowners = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -42,9 +57,17 @@ export function CreateDebtNoticeModal({
     })
   }, [homeowners, searchQuery])
 
+  const selectedTotal = useMemo(() => {
+    if (!outstanding) return 0
+    return outstanding.invoices
+      .filter((inv) => selectedInvoiceIds.includes(inv.id))
+      .reduce((sum, inv) => sum + inv.totalpaid, 0)
+  }, [outstanding, selectedInvoiceIds])
+
   if (!open) return null
 
   const handleSelectUser = async (user: Homeowner) => {
+    const seq = ++requestSeqRef.current
     setSelectedUser(user)
     setOutstanding(null)
     setSelectedInvoiceIds([])
@@ -52,13 +75,17 @@ export function CreateDebtNoticeModal({
     setLoadingOutstanding(true)
     try {
       const data = await onFetchOutstanding(user.id)
+      if (seq !== requestSeqRef.current) return
       const invoices = data.invoices ?? []
       setOutstanding({ ...data, invoices })
       setSelectedInvoiceIds(invoices.map((inv) => inv.id))
     } catch (err) {
+      if (seq !== requestSeqRef.current) return
       setError(err instanceof Error ? err.message : 'ไม่สามารถดึงยอดค้างชำระได้')
     } finally {
-      setLoadingOutstanding(false)
+      if (seq === requestSeqRef.current) {
+        setLoadingOutstanding(false)
+      }
     }
   }
 
@@ -67,13 +94,6 @@ export function CreateDebtNoticeModal({
       prev.includes(invoiceId) ? prev.filter((id) => id !== invoiceId) : [...prev, invoiceId]
     )
   }
-
-  const selectedTotal = useMemo(() => {
-    if (!outstanding) return 0
-    return outstanding.invoices
-      .filter((inv) => selectedInvoiceIds.includes(inv.id))
-      .reduce((sum, inv) => sum + inv.totalpaid, 0)
-  }, [outstanding, selectedInvoiceIds])
 
   const handleConfirm = async () => {
     if (!selectedUser || selectedInvoiceIds.length === 0) return

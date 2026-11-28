@@ -29,6 +29,7 @@ export function MeterCutScreen({
     notice.cut_meter_reading != null ? String(notice.cut_meter_reading) : ''
   )
   const [fetchedOutstanding, setFetchedOutstanding] = useState<number | null>(null)
+  const [outstandingError, setOutstandingError] = useState<string | null>(null)
   const [loadingOutstanding, setLoadingOutstanding] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,15 +41,20 @@ export function MeterCutScreen({
     }
     let cancelled = false
     setLoadingOutstanding(true)
+    setOutstandingError(null)
     onFetchOutstanding(notice.user_id)
       .then((res) => {
         if (!cancelled) {
           setFetchedOutstanding(res.total)
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
           setFetchedOutstanding(notice.total_overdue_amount)
+          const detail = err instanceof Error ? ` (${err.message})` : ''
+          setOutstandingError(
+            `ไม่สามารถตรวจสอบยอดค้างชำระล่าสุดได้${detail} — กรุณารีเฟรชก่อนเปิดคืนมิเตอร์`
+          )
         }
       })
       .finally(() => {
@@ -203,13 +209,21 @@ export function MeterCutScreen({
             </div>
             <button
               type="button"
-              disabled={effectiveOutstanding > 0 || loadingOutstanding || submitting}
+              disabled={effectiveOutstanding > 0 || Boolean(outstandingError) || loadingOutstanding || submitting}
               onClick={() => void handleRestoreClick()}
               className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? 'กำลังบันทึก...' : 'บันทึกเปิดคืนมิเตอร์'}
             </button>
           </div>
+          {outstandingError && (
+            <div
+              role="alert"
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900"
+            >
+              {outstandingError}
+            </div>
+          )}
           {effectiveOutstanding > 0 && (
             <p className="text-xs font-medium text-rose-700">
               ยังไม่สามารถเปิดคืนมิเตอร์ได้ เนื่องจากลูกบ้านยังมียอดค้างชำระคงเหลือ กรุณาชำระให้ครบก่อน
