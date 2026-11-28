@@ -1,8 +1,16 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import type { RateTier } from '@/features/billing/utils/waterBillCalculator'
 import type { Homeowner, WaterMeterItem } from '@/shared/types/waterSmartBill'
+import { tariffsMetersApi } from './tariffsMetersApi'
+import type { TierEditorSavePayload } from './TierEditor'
 
-export function useTariffsMeters(homeowners: Homeowner[]) {
+export function useTariffsMeters(
+  homeowners: Homeowner[],
+  token?: string,
+  onVatUpdated?: (vat: number) => void
+) {
+  const [rateConfigId, setRateConfigId] = useState<number>(1)
+  const [vatRate, setVatRate] = useState<number>(7)
   const [reserveFee, setReserveFee] = useState(10)
   const [tiers, setTiers] = useState<RateTier[]>([
     { tier_order: 1, min_units: 1, max_units: 10, rate_per_unit: 5, comment: 'หน่วยที่ 1 - 10 (ครัวเรือนประหยัด)' },
@@ -10,6 +18,60 @@ export function useTariffsMeters(homeowners: Homeowner[]) {
     { tier_order: 3, min_units: 21, max_units: 50, rate_per_unit: 10, comment: 'หน่วยที่ 21 - 50' },
     { tier_order: 4, min_units: 51, max_units: null, rate_per_unit: 12, comment: 'ตั้งแต่ 51 หน่วยขึ้นไป' },
   ])
+  const [isSavingRateConfig, setIsSavingRateConfig] = useState(false)
+  const [rateConfigError, setRateConfigError] = useState<string | null>(null)
+  const [rateConfigSuccess, setRateConfigSuccess] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    tariffsMetersApi
+      .getRateConfig(token)
+      .then((cfg) => {
+        if (cancelled || !cfg) return
+        if (typeof cfg.id === 'number' && cfg.id > 0) setRateConfigId(cfg.id)
+        if (typeof cfg.reserve_fee === 'number') setReserveFee(cfg.reserve_fee)
+        if (typeof cfg.vat === 'number') {
+          setVatRate(cfg.vat)
+          onVatUpdated?.(cfg.vat)
+        }
+        if (Array.isArray(cfg.tiers) && cfg.tiers.length > 0) {
+          setTiers(cfg.tiers)
+        }
+      })
+      .catch(() => {
+        // Keep seeded defaults when offline or backend unavailable in unit tests
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  async function handleSaveRateConfig(payload: TierEditorSavePayload) {
+    setIsSavingRateConfig(true)
+    setRateConfigError(null)
+    setRateConfigSuccess(null)
+    try {
+      if (token) {
+        const updated = await tariffsMetersApi.updateRateConfig(rateConfigId, payload, token)
+        setReserveFee(updated.reserve_fee)
+        setVatRate(updated.vat)
+        setTiers(updated.tiers)
+        onVatUpdated?.(updated.vat)
+      } else {
+        setReserveFee(payload.reserve_fee)
+        setVatRate(payload.vat)
+        setTiers(payload.tiers)
+        onVatUpdated?.(payload.vat)
+      }
+      setRateConfigSuccess('บันทึกอัตราค่าน้ำและ VAT สำเร็จ')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'ไม่สามารถบันทึกอัตราค่าน้ำได้'
+      setRateConfigError(msg)
+    } finally {
+      setIsSavingRateConfig(false)
+    }
+  }
   const [periods, setPeriods] = useState(['11/2569', '10/2569'])
   const [newPeriodName, setNewPeriodName] = useState('')
 
@@ -75,10 +137,17 @@ export function useTariffsMeters(homeowners: Homeowner[]) {
   }
 
   return {
+    rateConfigId,
+    vatRate,
+    setVatRate,
     reserveFee,
     setReserveFee,
     tiers,
     setTiers,
+    isSavingRateConfig,
+    rateConfigError,
+    rateConfigSuccess,
+    handleSaveRateConfig,
     periods,
     newPeriodName,
     setNewPeriodName,

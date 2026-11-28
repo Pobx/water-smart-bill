@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/pobx/water-smart-bill/backend-go/application"
@@ -127,6 +128,29 @@ ORDER BY t.id
 			return nil, err
 		}
 		out = append(out, ti)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) FindMeterRoutes(ctx context.Context, orgID *int64) ([]application.MeterRoute, error) {
+	const q = `
+SELECT id, org_id, name, staff_id
+FROM tw_meter_routes
+WHERE ($1::bigint IS NULL OR org_id = $1)
+ORDER BY name, id
+`
+	rows, err := s.db.Query(ctx, q, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]application.MeterRoute, 0)
+	for rows.Next() {
+		var r application.MeterRoute
+		if err := rows.Scan(&r.ID, &r.OrgID, &r.Name, &r.StaffID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }
@@ -375,6 +399,65 @@ VALUES ($1, $2, $3, $4, $5, $6)
 	return s.GetActiveRateConfig(ctx, &orgID)
 }
 
+func (s *Store) UpdateRateConfig(ctx context.Context, orgID *int64, configID int64, cmd application.UpdateRateConfigCommand) (application.MeterRateConfig, error) {
+	const qCheck = `
+SELECT rc.id, rc.org_id, rc.meter_type_id_fk
+FROM tw_meter_type_rate_configs rc
+WHERE rc.id = $1 AND ($2::bigint IS NULL OR rc.org_id = $2)
+`
+	var foundID, foundOrgID, meterTypeID int64
+	if err := s.db.QueryRow(ctx, qCheck, configID, orgID).Scan(&foundID, &foundOrgID, &meterTypeID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return application.MeterRateConfig{}, application.ErrNotFound
+		}
+		return application.MeterRateConfig{}, err
+	}
+
+	if cmd.PeriodID != nil {
+		var status string
+		err := s.db.QueryRow(ctx, `SELECT status FROM invoice_period WHERE id = $1 AND org_id = $2`, *cmd.PeriodID, foundOrgID).Scan(&status)
+		if err == nil {
+			normalized := strings.ToLower(strings.TrimSpace(status))
+			if normalized == "closed" || normalized == "finalized" {
+				return application.MeterRateConfig{}, fmt.Errorf("%w: cannot edit rate config for a finalized period", application.ErrConflict)
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return application.MeterRateConfig{}, err
+		}
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `UPDATE tw_meter_types SET reserve_fee = $2, meter_type_name = COALESCE(NULLIF($3, ''), meter_type_name), updated_at = NOW() WHERE id = $1`, meterTypeID, cmd.ReserveFee, strings.TrimSpace(cmd.MeterTypeName)); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE tw_meter_type_rate_configs SET vat = $2, updated_at = NOW() WHERE id = $1`, foundID, cmd.VatPercent); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE organizations SET vat = $2, updated_at = NOW() WHERE id = $1`, foundOrgID, cmd.VatPercent); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM tw_meter_type_rate_tiers WHERE meter_type_rate_config_id = $1`, foundID); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	for _, t := range cmd.Tiers {
+		if _, err := tx.Exec(ctx, `
+INSERT INTO tw_meter_type_rate_tiers (meter_type_rate_config_id, tier_order, min_units, max_units, rate_per_unit, comment)
+VALUES ($1, $2, $3, $4, $5, $6)
+`, foundID, t.TierOrder, t.MinUnits, t.MaxUnits, t.RatePerUnit, t.Comment); err != nil {
+			return application.MeterRateConfig{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.MeterRateConfig{}, err
+	}
+	return s.GetActiveRateConfig(ctx, &foundOrgID)
+}
+
 func (s *Store) ListPeriods(ctx context.Context, orgID *int64) ([]application.InvoicePeriod, error) {
 	const q = `
 SELECT id, org_id, inv_p_name, startdate::text, enddate::text, status
@@ -566,6 +649,131 @@ SELECT id FROM ins
 	return application.WaterInvoice{}, application.ErrNotFound
 }
 
+func (s *Store) ListReadings(ctx context.Context, orgID *int64, filter application.MeterReadingFilter) ([]application.MeterReadingItem, error) {
+	status := strings.ToLower(strings.TrimSpace(filter.Status))
+	out := []application.MeterReadingItem{}
+
+	resolvedPeriodID := filter.PeriodID
+	var resolvedPeriodName string
+	if resolvedPeriodID == nil || *resolvedPeriodID <= 0 {
+		const qActivePeriod = `
+SELECT id, COALESCE(inv_p_name, '')
+FROM invoice_period
+WHERE ($1::bigint IS NULL OR org_id = $1)
+  AND LOWER(status) = 'active'
+ORDER BY id DESC
+LIMIT 1
+`
+		var activeID int64
+		if err := s.db.QueryRow(ctx, qActivePeriod, orgID).Scan(&activeID, &resolvedPeriodName); err == nil && activeID > 0 {
+			resolvedPeriodID = &activeID
+		}
+	} else {
+		const qPeriodName = `
+SELECT COALESCE(inv_p_name, '')
+FROM invoice_period
+WHERE id = $1
+  AND ($2::bigint IS NULL OR org_id = $2)
+LIMIT 1
+`
+		_ = s.db.QueryRow(ctx, qPeriodName, *resolvedPeriodID, orgID).Scan(&resolvedPeriodName)
+	}
+
+	if status == "" || status == "recorded" {
+		const qRecorded = `
+SELECT inv.id, inv.inv_no, inv.org_id, inv.meter_id_fk,
+       COALESCE(m.meternumber, ''), COALESCE(m.submeter_name, ''),
+       COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''), m.route_id,
+       inv.inv_period_id_fk, COALESCE(p.inv_p_name, ''),
+       inv.lastmeter::float8, inv.currentmeter::float8, inv.water_used::float8,
+       inv.totalpaid::float8, inv.status, COALESCE(inv.recorded_at::text, '')
+FROM tw_invoice inv
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN zones z ON z.id = m.undertake_zone_id
+LEFT JOIN invoice_period p ON p.id = inv.inv_period_id_fk
+WHERE ($1::bigint IS NULL OR inv.org_id = $1)
+  AND ($2::bigint IS NULL OR inv.inv_period_id_fk = $2)
+  AND ($3::bigint IS NULL OR m.route_id = $3)
+ORDER BY inv.id DESC
+`
+		rows, err := s.db.Query(ctx, qRecorded, orgID, resolvedPeriodID, filter.RouteID)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var item application.MeterReadingItem
+			var current float64
+			if err := rows.Scan(
+				&item.ID, &item.InvoiceNo, &item.OrgID, &item.MeterID,
+				&item.MeterNumber, &item.HomeownerName,
+				&item.HouseNo, &item.ZoneName, &item.RouteID,
+				&item.PeriodID, &item.PeriodName,
+				&item.LastMeter, &current, &item.WaterUsed,
+				&item.TotalPaid, &item.InvoiceStatus, &item.RecordedAt,
+			); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			item.CurrentMeter = &current
+			item.ReadingStatus = "recorded"
+			out = append(out, item)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	if status == "" || status == "pending" {
+		const qPending = `
+SELECT m.org_id, m.meter_id, COALESCE(m.meternumber, ''), COALESCE(m.submeter_name, ''),
+       COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''), m.route_id,
+       m.last_meter_recording::float8
+FROM tw_meter_infos m
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN zones z ON z.id = m.undertake_zone_id
+LEFT JOIN tw_invoice inv
+  ON inv.meter_id_fk = m.meter_id
+  AND inv.org_id = m.org_id
+  AND ($2::bigint IS NULL OR inv.inv_period_id_fk = $2)
+WHERE ($1::bigint IS NULL OR m.org_id = $1)
+  AND ($3::bigint IS NULL OR m.route_id = $3)
+  AND inv.id IS NULL
+ORDER BY m.meter_id ASC
+`
+		rows, err := s.db.Query(ctx, qPending, orgID, resolvedPeriodID, filter.RouteID)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var item application.MeterReadingItem
+			if err := rows.Scan(
+				&item.OrgID, &item.MeterID, &item.MeterNumber, &item.HomeownerName,
+				&item.HouseNo, &item.ZoneName, &item.RouteID,
+				&item.LastMeter,
+			); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if resolvedPeriodID != nil {
+				item.PeriodID = *resolvedPeriodID
+			}
+			item.PeriodName = resolvedPeriodName
+			item.ReadingStatus = "pending"
+			out = append(out, item)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	return out, nil
+}
+
 func (s *Store) ListInvoices(ctx context.Context, orgID *int64, status string, periodID *int64) ([]application.WaterInvoice, error) {
 	const q = `
 SELECT inv.id, inv.inv_no, COALESCE(inv.client_reading_id, ''), inv.org_id, COALESCE(o.org_name, 'อบต.ห้องแซง'),
@@ -649,6 +857,771 @@ WHERE inv.id = $1
 		}
 	}
 	return application.WaterInvoice{}, application.ErrNotFound
+}
+
+func (s *Store) FindUnpaidInvoices(ctx context.Context, orgID *int64, userID int64) ([]application.WaterInvoice, error) {
+	const q = `
+SELECT inv.id, inv.inv_no, COALESCE(inv.client_reading_id, ''), inv.org_id, COALESCE(o.org_name, 'อบต.ห้องแซง'),
+       inv.meter_id_fk, COALESCE(m.meternumber, ''), COALESCE(m.submeter_name, ''),
+       COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''),
+       inv.inv_period_id_fk, COALESCE(p.inv_p_name, ''),
+       inv.lastmeter::float8, inv.currentmeter::float8, inv.water_used::float8,
+       inv.paid::float8, inv.reserve_meter::float8, inv.vat::float8, inv.totalpaid::float8,
+       inv.reading_photo_url, inv.ocr_text, inv.ocr_confidence::float8, inv.status,
+       COALESCE(inv.payment_method, ''), COALESCE(inv.receipt_no, ''), COALESCE(inv.paid_at::text, ''), COALESCE(inv.cashier_id, 0),
+       inv.recorded_at::text
+FROM tw_invoice inv
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
+LEFT JOIN organizations o ON o.id = inv.org_id
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN zones z ON z.id = m.undertake_zone_id
+LEFT JOIN invoice_period p ON p.id = inv.inv_period_id_fk
+WHERE m.user_id = $1
+  AND ($2::bigint IS NULL OR inv.org_id = $2)
+  AND inv.status IN ('invoice', 'owe')
+ORDER BY inv.inv_period_id_fk ASC, inv.id ASC
+`
+	rows, err := s.db.Query(ctx, q, userID, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]application.WaterInvoice, 0)
+	for rows.Next() {
+		var inv application.WaterInvoice
+		if err := rows.Scan(
+			&inv.ID, &inv.InvoiceNo, &inv.ClientReadingID, &inv.OrgID, &inv.OrgName,
+			&inv.MeterID, &inv.MeterNumber, &inv.HomeownerName, &inv.HouseNo, &inv.ZoneName,
+			&inv.PeriodID, &inv.PeriodName, &inv.LastMeter, &inv.CurrentMeter, &inv.WaterUsed,
+			&inv.Paid, &inv.ReserveMeter, &inv.Vat, &inv.TotalPaid,
+			&inv.ReadingPhotoURL, &inv.OCRText, &inv.OCRConfidence, &inv.Status,
+			&inv.PaymentMethod, &inv.ReceiptNo, &inv.PaidAt, &inv.CashierID,
+			&inv.RecordedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, inv)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) createPaymentBatch(ctx context.Context, tx pgx.Tx, batchID string, orgID, userID int64, totalAmount float64, receivedBy int64) (string, error) {
+	const q = `
+INSERT INTO payment_batches (id, org_id, user_id, total_amount, paid_at, received_by)
+VALUES ($1::uuid, $2, $3, $4, NOW(), $5)
+RETURNING paid_at::text
+`
+	var paidAt string
+	err := tx.QueryRow(ctx, q, batchID, orgID, userID, totalAmount, receivedBy).Scan(&paidAt)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return "", fmt.Errorf("%w: duplicate batch_id", application.ErrConflict)
+		}
+		return "", err
+	}
+	return paidAt, nil
+}
+
+func (s *Store) PayInvoicesBulk(ctx context.Context, orgID *int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
+	batchID := strings.ToLower(strings.TrimSpace(cmd.BatchID))
+	method := strings.TrimSpace(cmd.PaymentMethod)
+	if method == "" {
+		method = "cash"
+	}
+	cashierID := cmd.CashierID
+	if cashierID <= 0 {
+		cashierID = 1
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Idempotency guard: check if batch_id already exists (scoped by org_id when tenant-bound)
+	var exists bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM payment_batches WHERE id = $1::uuid AND ($2::bigint IS NULL OR org_id = $2))`, batchID, orgID).Scan(&exists); err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+	if exists {
+		return application.PaymentBatchResult{}, fmt.Errorf("%w: duplicate batch_id", application.ErrConflict)
+	}
+
+	type lockedInvoice struct {
+		id           int64
+		orgID        int64
+		meterID      int64
+		userID       int64
+		paid         float64
+		vat          float64
+		reserveMeter float64
+		totalPaid    float64
+		status       string
+	}
+
+	var resolvedOrgID int64
+	if orgID != nil {
+		resolvedOrgID = *orgID
+	}
+
+	locked := make([]lockedInvoice, 0, len(cmd.InvoiceIDs))
+	var serverTotal float64
+	const qLock = `
+SELECT inv.id, inv.org_id, inv.meter_id_fk, m.user_id,
+       inv.paid::float8, inv.vat::float8, inv.reserve_meter::float8, inv.totalpaid::float8, inv.status
+FROM tw_invoice inv
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk AND m.org_id = inv.org_id
+WHERE inv.id = $1 AND ($2::bigint IS NULL OR inv.org_id = $2)
+FOR UPDATE OF inv
+`
+	for _, invID := range cmd.InvoiceIDs {
+		var row lockedInvoice
+		err := tx.QueryRow(ctx, qLock, invID, orgID).Scan(
+			&row.id, &row.orgID, &row.meterID, &row.userID,
+			&row.paid, &row.vat, &row.reserveMeter, &row.totalPaid, &row.status,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d not found", application.ErrNotFound, invID)
+		}
+		if err != nil {
+			return application.PaymentBatchResult{}, err
+		}
+		if resolvedOrgID == 0 {
+			resolvedOrgID = row.orgID
+		} else if row.orgID != resolvedOrgID {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d belongs to another organization", application.ErrForbidden, invID)
+		}
+		if row.userID != cmd.UserID {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d does not belong to user %d", application.ErrForbidden, invID, cmd.UserID)
+		}
+		st := strings.ToLower(strings.TrimSpace(row.status))
+		if st != "invoice" && st != "owe" {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d is already paid or not payable", application.ErrConflict, invID)
+		}
+		serverTotal += row.totalPaid
+		locked = append(locked, row)
+	}
+
+	serverTotal = math.Round(serverTotal*100) / 100
+	if cmd.Amount+0.01 < serverTotal {
+		return application.PaymentBatchResult{}, fmt.Errorf("%w: payment amount %.2f is less than total due %.2f", application.ErrBadRequest, cmd.Amount, serverTotal)
+	}
+
+	paidAt, err := s.createPaymentBatch(ctx, tx, batchID, resolvedOrgID, cmd.UserID, serverTotal, cashierID)
+	if err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+
+	receiptNo := fmt.Sprintf("RC-BATCH-%s-%s", time.Now().UTC().Format("200601"), strings.ToUpper(batchID[:8]))
+	const qInsAcc = `
+INSERT INTO tw_acc_transactions (
+    org_id, meter_id_fk, paidsum, vatsum, reserve_meter_sum, totalpaidsum,
+    payment_method, status, cashier, batch_payment_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, '1', $8, $9::uuid)
+RETURNING id
+`
+	const qUpdInv = `
+UPDATE tw_invoice
+SET status = 'paid',
+    payment_method = $2,
+    receipt_no = $3,
+    paid_at = NOW(),
+    cashier_id = $4,
+    acc_trans_id_fk = $5,
+    updated_at = NOW()
+WHERE id = $1 AND org_id = $6
+`
+	const qUpdMeter = `
+UPDATE tw_meter_infos
+SET owe_count = GREATEST(0, owe_count - 1), updated_at = NOW()
+WHERE meter_id = $1 AND org_id = $2
+`
+	for _, row := range locked {
+		var accID int64
+		if err := tx.QueryRow(ctx, qInsAcc,
+			resolvedOrgID, row.meterID, row.paid, row.vat, row.reserveMeter, row.totalPaid,
+			method, cashierID, batchID,
+		).Scan(&accID); err != nil {
+			return application.PaymentBatchResult{}, err
+		}
+		if _, err := tx.Exec(ctx, qUpdInv, row.id, method, receiptNo, cashierID, accID, resolvedOrgID); err != nil {
+			return application.PaymentBatchResult{}, err
+		}
+		if _, err := tx.Exec(ctx, qUpdMeter, row.meterID, resolvedOrgID); err != nil {
+			return application.PaymentBatchResult{}, err
+		}
+	}
+
+	const qFetch = `
+SELECT inv.id, inv.inv_no, COALESCE(inv.client_reading_id, ''), inv.org_id, COALESCE(o.org_name, 'อบต.ห้องแซง'),
+       inv.meter_id_fk, COALESCE(m.meternumber, ''), COALESCE(m.submeter_name, ''),
+       COALESCE(u.house_no, ''), COALESCE(z.zone_name, ''),
+       inv.inv_period_id_fk, COALESCE(p.inv_p_name, ''),
+       inv.lastmeter::float8, inv.currentmeter::float8, inv.water_used::float8,
+       inv.paid::float8, inv.reserve_meter::float8, inv.vat::float8, inv.totalpaid::float8,
+       inv.reading_photo_url, inv.ocr_text, inv.ocr_confidence::float8, inv.status,
+       COALESCE(inv.payment_method, ''), COALESCE(inv.receipt_no, ''), COALESCE(inv.paid_at::text, ''), COALESCE(inv.cashier_id, 0),
+       inv.recorded_at::text
+FROM tw_invoice inv
+LEFT JOIN organizations o ON o.id = inv.org_id
+LEFT JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk
+LEFT JOIN users u ON u.id = m.user_id
+LEFT JOIN zones z ON z.id = m.undertake_zone_id
+LEFT JOIN invoice_period p ON p.id = inv.inv_period_id_fk
+WHERE inv.id = ANY($1::bigint[]) AND inv.org_id = $2
+ORDER BY inv.inv_period_id_fk ASC, inv.id ASC
+`
+	rows, err := tx.Query(ctx, qFetch, cmd.InvoiceIDs, resolvedOrgID)
+	if err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+	paidInvoices := make([]application.WaterInvoice, 0, len(locked))
+	for rows.Next() {
+		var inv application.WaterInvoice
+		if err := rows.Scan(
+			&inv.ID, &inv.InvoiceNo, &inv.ClientReadingID, &inv.OrgID, &inv.OrgName,
+			&inv.MeterID, &inv.MeterNumber, &inv.HomeownerName, &inv.HouseNo, &inv.ZoneName,
+			&inv.PeriodID, &inv.PeriodName, &inv.LastMeter, &inv.CurrentMeter, &inv.WaterUsed,
+			&inv.Paid, &inv.ReserveMeter, &inv.Vat, &inv.TotalPaid,
+			&inv.ReadingPhotoURL, &inv.OCRText, &inv.OCRConfidence, &inv.Status,
+			&inv.PaymentMethod, &inv.ReceiptNo, &inv.PaidAt, &inv.CashierID,
+			&inv.RecordedAt,
+		); err != nil {
+			rows.Close()
+			return application.PaymentBatchResult{}, err
+		}
+		paidInvoices = append(paidInvoices, inv)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return application.PaymentBatchResult{}, err
+	}
+	rows.Close()
+
+	if err := tx.Commit(ctx); err != nil {
+		return application.PaymentBatchResult{}, err
+	}
+
+	return application.PaymentBatchResult{
+		BatchID:       batchID,
+		OrgID:         resolvedOrgID,
+		UserID:        cmd.UserID,
+		TotalAmount:   serverTotal,
+		PaymentMethod: method,
+		ReceiptNo:     receiptNo,
+		PaidAt:        paidAt,
+		ReceivedBy:    cashierID,
+		Invoices:      paidInvoices,
+	}, nil
+}
+
+const debtNoticeSelectCols = `
+SELECT dn.id::text, dn.org_id, dn.user_id,
+       COALESCE(TRIM(CONCAT(u.prefix, u.firstname, ' ', u.lastname)), ''),
+       COALESCE(u.house_no, ''),
+       COALESCE((SELECT m.meternumber FROM tw_meter_infos m WHERE m.user_id = dn.user_id AND m.org_id = dn.org_id ORDER BY m.meter_id ASC LIMIT 1), ''),
+       dn.invoice_ids, dn.total_overdue_amount::float8, dn.status,
+       COALESCE(dn.notice_sent_at::text, ''),
+       COALESCE(dn.cut_at::text, ''), dn.cut_by, dn.cut_meter_reading::float8,
+       COALESCE(dn.restored_at::text, ''), dn.restored_by,
+       dn.created_at::text
+FROM debt_notices dn
+LEFT JOIN users u ON u.id = dn.user_id AND u.org_id = dn.org_id
+`
+
+func scanDebtNotice(row pgx.Row) (application.DebtNotice, error) {
+	var n application.DebtNotice
+	if err := row.Scan(
+		&n.ID, &n.OrgID, &n.UserID,
+		&n.HomeownerName, &n.HouseNo, &n.MeterNumber,
+		&n.InvoiceIDs, &n.TotalOverdueAmount, &n.Status,
+		&n.NoticeSentAt,
+		&n.CutAt, &n.CutBy, &n.CutMeterReading,
+		&n.RestoredAt, &n.RestoredBy,
+		&n.CreatedAt,
+	); err != nil {
+		return application.DebtNotice{}, err
+	}
+	if n.InvoiceIDs == nil {
+		n.InvoiceIDs = []int64{}
+	}
+	return n, nil
+}
+
+func (s *Store) InsertDebtNotice(ctx context.Context, orgID *int64, cmd application.CreateDebtNoticeCommand) (application.DebtNotice, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var resolvedOrgID int64
+	if orgID != nil {
+		resolvedOrgID = *orgID
+	}
+
+	var totalOverdue float64
+	const qInv = `
+SELECT inv.org_id, m.user_id, inv.totalpaid::float8, inv.status
+FROM tw_invoice inv
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk AND m.org_id = inv.org_id
+WHERE inv.id = $1 AND ($2::bigint IS NULL OR inv.org_id = $2)
+`
+	for _, invID := range cmd.InvoiceIDs {
+		var invOrgID, invUserID int64
+		var totalPaid float64
+		var status string
+		err := tx.QueryRow(ctx, qInv, invID, orgID).Scan(&invOrgID, &invUserID, &totalPaid, &status)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return application.DebtNotice{}, fmt.Errorf("%w: invoice %d not found", application.ErrNotFound, invID)
+		}
+		if err != nil {
+			return application.DebtNotice{}, err
+		}
+		if resolvedOrgID == 0 {
+			resolvedOrgID = invOrgID
+		} else if invOrgID != resolvedOrgID {
+			return application.DebtNotice{}, fmt.Errorf("%w: invoice %d belongs to another organization", application.ErrForbidden, invID)
+		}
+		if invUserID != cmd.UserID {
+			return application.DebtNotice{}, fmt.Errorf("%w: invoice %d does not belong to user %d", application.ErrForbidden, invID, cmd.UserID)
+		}
+		st := strings.ToLower(strings.TrimSpace(status))
+		if st != "invoice" && st != "owe" {
+			return application.DebtNotice{}, fmt.Errorf("%w: invoice %d is already paid", application.ErrConflict, invID)
+		}
+		totalOverdue += totalPaid
+	}
+	totalOverdue = math.Round(totalOverdue*100) / 100
+
+	const qIns = `
+INSERT INTO debt_notices (org_id, user_id, invoice_ids, total_overdue_amount, status, notice_sent_at)
+VALUES ($1, $2, $3::bigint[], $4, 'sent', NOW())
+RETURNING id::text
+`
+	var newID string
+	if err := tx.QueryRow(ctx, qIns, resolvedOrgID, cmd.UserID, cmd.InvoiceIDs, totalOverdue).Scan(&newID); err != nil {
+		return application.DebtNotice{}, err
+	}
+
+	notice, err := scanDebtNotice(tx.QueryRow(ctx, debtNoticeSelectCols+`WHERE dn.id = $1::uuid AND dn.org_id = $2`, newID, resolvedOrgID))
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.DebtNotice{}, err
+	}
+	return notice, nil
+}
+
+func (s *Store) FindDebtNotices(ctx context.Context, orgID *int64, filter application.DebtNoticeFilter) ([]application.DebtNotice, error) {
+	q := debtNoticeSelectCols + `
+WHERE ($1::bigint IS NULL OR dn.org_id = $1)
+  AND ($2 = '' OR LOWER(dn.status) = LOWER($2))
+  AND ($3::bigint IS NULL OR dn.user_id = $3)
+ORDER BY dn.created_at DESC
+`
+	rows, err := s.db.Query(ctx, q, orgID, strings.TrimSpace(filter.Status), filter.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]application.DebtNotice, 0)
+	for rows.Next() {
+		n, err := scanDebtNotice(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) FindDebtNoticeByID(ctx context.Context, orgID *int64, id string) (application.DebtNotice, error) {
+	if !application.IsValidUUID(id) {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	q := debtNoticeSelectCols + `WHERE dn.id = $1::uuid AND ($2::bigint IS NULL OR dn.org_id = $2)`
+	n, err := scanDebtNotice(s.db.QueryRow(ctx, q, strings.TrimSpace(id), orgID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	return n, nil
+}
+
+func (s *Store) CutMeterByDebtNotice(ctx context.Context, orgID *int64, id string, cmd application.CutMeterCommand) (application.DebtNotice, error) {
+	if !application.IsValidUUID(id) {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var noticeOrgID, noticeUserID int64
+	var status string
+	err = tx.QueryRow(ctx, `
+SELECT org_id, user_id, status
+FROM debt_notices
+WHERE id = $1::uuid AND ($2::bigint IS NULL OR org_id = $2)
+FOR UPDATE
+`, strings.TrimSpace(id), orgID).Scan(&noticeOrgID, &noticeUserID, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	if status != application.DebtNoticeStatusSent && status != application.DebtNoticeStatusPending {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice status %q cannot be cut", application.ErrConflict, status)
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE debt_notices
+SET status = 'cut', cut_meter_reading = $2, cut_by = $3, cut_at = NOW()
+WHERE id = $1::uuid AND org_id = $4
+`, strings.TrimSpace(id), cmd.MeterReading, cmd.CutBy, noticeOrgID); err != nil {
+		return application.DebtNotice{}, err
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE tw_meter_infos
+SET status = 'disconnected', cutmeter = '1', debt_notice_id = $1::uuid, updated_at = NOW()
+WHERE user_id = $2 AND org_id = $3
+`, strings.TrimSpace(id), noticeUserID, noticeOrgID); err != nil {
+		return application.DebtNotice{}, err
+	}
+
+	updated, err := scanDebtNotice(tx.QueryRow(ctx, debtNoticeSelectCols+`WHERE dn.id = $1::uuid AND dn.org_id = $2`, strings.TrimSpace(id), noticeOrgID))
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.DebtNotice{}, err
+	}
+	return updated, nil
+}
+
+func (s *Store) RestoreMeterByDebtNotice(ctx context.Context, orgID *int64, id string, restoredBy int64) (application.DebtNotice, error) {
+	if !application.IsValidUUID(id) {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var noticeOrgID, noticeUserID int64
+	var status string
+	err = tx.QueryRow(ctx, `
+SELECT org_id, user_id, status
+FROM debt_notices
+WHERE id = $1::uuid AND ($2::bigint IS NULL OR org_id = $2)
+FOR UPDATE
+`, strings.TrimSpace(id), orgID).Scan(&noticeOrgID, &noticeUserID, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	if status != application.DebtNoticeStatusCut {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice status %q cannot be restored", application.ErrConflict, status)
+	}
+
+	var unpaidCount int
+	if err := tx.QueryRow(ctx, `
+SELECT COUNT(*)
+FROM tw_invoice inv
+INNER JOIN tw_meter_infos m ON m.meter_id = inv.meter_id_fk AND m.org_id = inv.org_id
+WHERE inv.org_id = $1 AND m.org_id = $1 AND m.user_id = $2 AND LOWER(inv.status) IN ('invoice', 'owe')
+`, noticeOrgID, noticeUserID).Scan(&unpaidCount); err != nil {
+		return application.DebtNotice{}, err
+	}
+	if unpaidCount > 0 {
+		return application.DebtNotice{}, fmt.Errorf("%w: outstanding balance remaining", application.ErrBadRequest)
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE debt_notices
+SET status = 'restored', restored_by = $2, restored_at = NOW()
+WHERE id = $1::uuid AND org_id = $3
+`, strings.TrimSpace(id), restoredBy, noticeOrgID); err != nil {
+		return application.DebtNotice{}, err
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE tw_meter_infos
+SET status = 'active', cutmeter = '0', updated_at = NOW()
+WHERE user_id = $1 AND org_id = $2
+`, noticeUserID, noticeOrgID); err != nil {
+		return application.DebtNotice{}, err
+	}
+
+	updated, err := scanDebtNotice(tx.QueryRow(ctx, debtNoticeSelectCols+`WHERE dn.id = $1::uuid AND dn.org_id = $2`, strings.TrimSpace(id), noticeOrgID))
+	if err != nil {
+		return application.DebtNotice{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.DebtNotice{}, err
+	}
+	return updated, nil
+}
+
+const incidentListSelectCols = `
+SELECT i.id::text, i.org_id, i.reporter_user_id,
+       COALESCE(TRIM(CONCAT(u.prefix, u.firstname, ' ', u.lastname)), ''),
+       i.incident_type, COALESCE(i.description, ''),
+       COALESCE(i.photo_url, ''), i.status,
+       i.assigned_to, COALESCE(i.assigned_at::text, ''),
+       COALESCE(i.resolved_at::text, ''), COALESCE(i.resolution_note, ''),
+       i.created_at::text
+FROM incidents i
+LEFT JOIN users u ON u.id = i.reporter_user_id AND u.org_id = i.org_id
+`
+
+const incidentDetailSelectCols = `
+SELECT i.id::text, i.org_id, i.reporter_user_id,
+       COALESCE(TRIM(CONCAT(u.prefix, u.firstname, ' ', u.lastname)), ''),
+       i.incident_type, COALESCE(i.description, ''),
+       i.lat::float8, i.lng::float8,
+       COALESCE(i.photo_url, ''), i.status,
+       i.assigned_to, COALESCE(i.assigned_at::text, ''),
+       COALESCE(i.resolved_at::text, ''), COALESCE(i.resolution_note, ''),
+       i.created_at::text
+FROM incidents i
+LEFT JOIN users u ON u.id = i.reporter_user_id AND u.org_id = i.org_id
+`
+
+func scanIncidentList(row pgx.Row) (application.Incident, error) {
+	var inc application.Incident
+	if err := row.Scan(
+		&inc.ID, &inc.OrgID, &inc.ReporterUserID,
+		&inc.ReporterName,
+		&inc.IncidentType, &inc.Description,
+		&inc.PhotoURL, &inc.Status,
+		&inc.AssignedTo, &inc.AssignedAt,
+		&inc.ResolvedAt, &inc.ResolutionNote,
+		&inc.CreatedAt,
+	); err != nil {
+		return application.Incident{}, err
+	}
+	return inc, nil
+}
+
+func scanIncidentDetail(row pgx.Row) (application.Incident, error) {
+	var inc application.Incident
+	if err := row.Scan(
+		&inc.ID, &inc.OrgID, &inc.ReporterUserID,
+		&inc.ReporterName,
+		&inc.IncidentType, &inc.Description,
+		&inc.Lat, &inc.Lng,
+		&inc.PhotoURL, &inc.Status,
+		&inc.AssignedTo, &inc.AssignedAt,
+		&inc.ResolvedAt, &inc.ResolutionNote,
+		&inc.CreatedAt,
+	); err != nil {
+		return application.Incident{}, err
+	}
+	return inc, nil
+}
+
+func (s *Store) InsertIncident(ctx context.Context, orgID int64, reporterUserID int64, cmd application.CreateIncidentCommand) (application.Incident, error) {
+	var newID string
+	err := s.db.QueryRow(ctx, `
+INSERT INTO incidents (org_id, reporter_user_id, incident_type, description, lat, lng, photo_url, status)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), 'open')
+RETURNING id::text
+`, orgID, reporterUserID, strings.ToLower(strings.TrimSpace(cmd.IncidentType)), strings.TrimSpace(cmd.Description), cmd.Lat, cmd.Lng, strings.TrimSpace(cmd.PhotoURL)).Scan(&newID)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	return scanIncidentDetail(s.db.QueryRow(ctx, incidentDetailSelectCols+`WHERE i.id = $1::uuid AND i.org_id = $2`, newID, orgID))
+}
+
+func (s *Store) FindIncidents(ctx context.Context, orgID *int64, filter application.IncidentFilter) ([]application.Incident, error) {
+	q := incidentListSelectCols + `
+WHERE ($1::bigint IS NULL OR i.org_id = $1)
+  AND ($2 = '' OR LOWER(i.status) = LOWER($2))
+  AND ($3::bigint IS NULL OR i.assigned_to = $3)
+ORDER BY i.created_at DESC
+`
+	rows, err := s.db.Query(ctx, q, orgID, strings.TrimSpace(filter.Status), filter.AssignedTo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]application.Incident, 0)
+	for rows.Next() {
+		inc, err := scanIncidentList(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inc)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) FindMyIncidents(ctx context.Context, orgID *int64, reporterUserID int64) ([]application.Incident, error) {
+	q := incidentListSelectCols + `
+WHERE ($1::bigint IS NULL OR i.org_id = $1)
+  AND i.reporter_user_id = $2
+ORDER BY i.created_at DESC
+`
+	rows, err := s.db.Query(ctx, q, orgID, reporterUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]application.Incident, 0)
+	for rows.Next() {
+		inc, err := scanIncidentList(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, inc)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) FindIncidentByID(ctx context.Context, orgID *int64, id string) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	q := incidentDetailSelectCols + `WHERE i.id = $1::uuid AND ($2::bigint IS NULL OR i.org_id = $2)`
+	inc, err := scanIncidentDetail(s.db.QueryRow(ctx, q, trimmed, orgID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.Incident{}, err
+	}
+	return inc, nil
+}
+
+func (s *Store) AssignIncident(ctx context.Context, orgID *int64, id string, staffID int64) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var incOrgID int64
+	var status, desc string
+	var prevAssigned *int64
+	err = tx.QueryRow(ctx, `
+SELECT org_id, status, assigned_to, COALESCE(description, '')
+FROM incidents
+WHERE id = $1::uuid AND ($2::bigint IS NULL OR org_id = $2)
+FOR UPDATE
+`, trimmed, orgID).Scan(&incOrgID, &status, &prevAssigned, &desc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if status != application.IncidentStatusOpen && status != application.IncidentStatusInProgress {
+		return application.Incident{}, fmt.Errorf("%w: incident status %q cannot be assigned", application.ErrBadRequest, status)
+	}
+
+	var staffExists bool
+	if err := tx.QueryRow(ctx, `
+SELECT EXISTS(SELECT 1 FROM users WHERE id = $1 AND org_id = $2)
+`, staffID, incOrgID).Scan(&staffExists); err != nil {
+		return application.Incident{}, err
+	}
+	if !staffExists {
+		return application.Incident{}, fmt.Errorf("%w: staff_id not found in organization", application.ErrBadRequest)
+	}
+
+	if prevAssigned != nil && *prevAssigned != staffID {
+		note := fmt.Sprintf("[reassigned from staff #%d]", *prevAssigned)
+		if strings.TrimSpace(desc) == "" {
+			desc = note
+		} else {
+			desc = desc + "\n" + note
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE incidents
+SET status = 'in_progress', assigned_to = $2, assigned_at = NOW(), description = $3
+WHERE id = $1::uuid AND org_id = $4
+`, trimmed, staffID, desc, incOrgID); err != nil {
+		return application.Incident{}, err
+	}
+
+	updated, err := scanIncidentDetail(tx.QueryRow(ctx, incidentDetailSelectCols+`WHERE i.id = $1::uuid AND i.org_id = $2`, trimmed, incOrgID))
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.Incident{}, err
+	}
+	return updated, nil
+}
+
+func (s *Store) ResolveIncident(ctx context.Context, orgID *int64, id string, resolutionNote string) (application.Incident, error) {
+	trimmed := strings.TrimSpace(id)
+	if !application.IsValidUUID(trimmed) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return application.Incident{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var incOrgID int64
+	var status string
+	err = tx.QueryRow(ctx, `
+SELECT org_id, status
+FROM incidents
+WHERE id = $1::uuid AND ($2::bigint IS NULL OR org_id = $2)
+FOR UPDATE
+`, trimmed, orgID).Scan(&incOrgID, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if status != application.IncidentStatusInProgress {
+		return application.Incident{}, fmt.Errorf("%w: incident status %q must be in_progress to resolve", application.ErrBadRequest, status)
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE incidents
+SET status = 'resolved', resolved_at = NOW(), resolution_note = $2
+WHERE id = $1::uuid AND org_id = $3
+`, trimmed, strings.TrimSpace(resolutionNote), incOrgID); err != nil {
+		return application.Incident{}, err
+	}
+
+	updated, err := scanIncidentDetail(tx.QueryRow(ctx, incidentDetailSelectCols+`WHERE i.id = $1::uuid AND i.org_id = $2`, trimmed, incOrgID))
+	if err != nil {
+		return application.Incident{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return application.Incident{}, err
+	}
+	return updated, nil
 }
 
 func (s *Store) GetLiffPortalData(ctx context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {

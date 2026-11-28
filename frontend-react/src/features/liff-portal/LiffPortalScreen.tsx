@@ -1,10 +1,13 @@
 import { SearchableSelect } from '@/shared/ui'
 import type { WaterMeterItem } from '@/shared/types/waterSmartBill'
+import type { DebtNotice } from './liffPortalApi'
+import { ReportIncidentForm } from './ReportIncidentForm'
 import type { useLiffPortal } from './useLiffPortal'
 
-export interface LiffPortalScreenProps extends ReturnType<typeof useLiffPortal> {
+export interface LiffPortalScreenProps extends Omit<ReturnType<typeof useLiffPortal>, 'debtNotices'> {
   orgName: string
   meters: WaterMeterItem[]
+  debtNotices?: DebtNotice[]
 }
 
 export function LiffPortalScreen({
@@ -14,7 +17,23 @@ export function LiffPortalScreen({
   setLiffSelectedMeterNo,
   liffInvoices,
   liffMeter,
+  debtNotices = [],
+  isIncidentFormOpen,
+  setIsIncidentFormOpen,
+  submitIncident,
 }: LiffPortalScreenProps) {
+  const activeDebtNotices = debtNotices.filter(
+    (notice) => notice.status === 'pending' || notice.status === 'sent'
+  )
+  const overdueRounds = activeDebtNotices.reduce(
+    (sum, notice) => sum + (notice.invoice_ids?.length || 1),
+    0
+  )
+  const totalOverdueAmount = activeDebtNotices.reduce(
+    (sum, notice) => sum + notice.total_overdue_amount,
+    0
+  )
+
   return (
     <div className="mx-auto max-w-lg rounded-3xl border border-emerald-200 bg-white p-6 shadow-md">
       <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -38,6 +57,25 @@ export function LiffPortalScreen({
         </div>
       </div>
 
+      {activeDebtNotices.length > 0 && (
+        <div
+          role="alert"
+          className="mb-4 rounded-2xl border border-rose-300 bg-rose-50 p-4 text-rose-900 shadow-xs"
+        >
+          <div className="flex items-start gap-2.5">
+            <span aria-hidden="true" className="text-lg leading-none">
+              ⚠️
+            </span>
+            <div className="space-y-1 text-xs">
+              <div className="font-bold text-rose-800">แจ้งเตือนค้างชำระค่าน้ำประปา</div>
+              <p className="font-medium text-rose-800">
+                {`กรุณาชำระค่าน้ำที่ค้างชำระจำนวน ${overdueRounds} รอบ ยอดรวม ${totalOverdueAmount.toFixed(2)} บาท`}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {liffMeter && (
         <div className="mb-4 rounded-2xl bg-slate-50 p-4 text-sm">
           <div className="font-bold text-slate-900">{liffMeter.homeowner_name}</div>
@@ -46,6 +84,30 @@ export function LiffPortalScreen({
             <span className="font-mono font-bold text-sky-700">{liffMeter.meternumber}</span>
           </div>
         </div>
+      )}
+
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => setIsIncidentFormOpen((prev) => !prev)}
+          aria-expanded={isIncidentFormOpen}
+          className="flex w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left transition hover:bg-amber-100/70"
+        >
+          <span className="flex items-center gap-2 text-xs font-bold text-amber-900">
+            <span aria-hidden="true">🚨</span>
+            <span>แจ้งเหตุขัดข้องน้ำประปา</span>
+          </span>
+          <span className="text-xs font-semibold text-amber-700">
+            {isIncidentFormOpen ? 'ซ่อนฟอร์ม' : 'แจ้งเหตุ'}
+          </span>
+        </button>
+      </div>
+
+      {isIncidentFormOpen && (
+        <ReportIncidentForm
+          onSubmit={submitIncident}
+          onCancel={() => setIsIncidentFormOpen(false)}
+        />
       )}
 
       <div className="space-y-3">

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,9 +22,15 @@ type Store struct {
 	homeowners  []application.HomeownerUser
 	rateConfig  application.MeterRateConfig
 	periods     []application.InvoicePeriod
-	meters      []application.WaterMeter
-	invoices    []application.WaterInvoice
-	nextZoneID  int64
+	meters         []application.WaterMeter
+	meterRoutes    []application.MeterRoute
+	invoices       []application.WaterInvoice
+	paymentBatches map[string]application.PaymentBatchResult
+	debtNotices     []application.DebtNotice
+	nextDebtSeq     uint64
+	incidents       []application.Incident
+	nextIncidentSeq uint64
+	nextZoneID      int64
 	nextSubID   int64
 	nextUserID  int64
 	nextPeriod  int64
@@ -53,6 +60,7 @@ func NewStore() *Store {
 			LogoImg:           "/api/v1/avatars/default?name=SAO",
 			MeterPrefix:       "HSG",
 			CutMeterThreshold: 3,
+			OverdueThreshold:  2,
 			VatRate:           7.0,
 		},
 		tambons: []application.TambonInfo{
@@ -270,7 +278,12 @@ func NewStore() *Store {
 				RecordedAt:      "2026-10-25T09:30:00Z",
 			},
 		},
-		nextZoneID:  3,
+		paymentBatches: map[string]application.PaymentBatchResult{},
+		debtNotices:     []application.DebtNotice{},
+		nextDebtSeq:     1,
+		incidents:       []application.Incident{},
+		nextIncidentSeq: 1,
+		nextZoneID:     3,
 		nextSubID:   3,
 		nextUserID:  3,
 		nextPeriod:  3,
@@ -332,6 +345,31 @@ func (s *Store) ListZones(_ context.Context, _ *int64) ([]application.Zone, erro
 	defer s.mu.RUnlock()
 	out := make([]application.Zone, len(s.zones))
 	copy(out, s.zones)
+	return out, nil
+}
+
+func (s *Store) SeedMeterRoutes(routes ...application.MeterRoute) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.meterRoutes = append([]application.MeterRoute(nil), routes...)
+}
+
+func (s *Store) FindMeterRoutes(_ context.Context, orgID *int64) ([]application.MeterRoute, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]application.MeterRoute, 0)
+	for _, r := range s.meterRoutes {
+		if orgID != nil && r.OrgID != *orgID {
+			continue
+		}
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name == out[j].Name {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Name < out[j].Name
+	})
 	return out, nil
 }
 
@@ -484,6 +522,38 @@ func (s *Store) SaveRateConfig(_ context.Context, _ int64, cmd application.SaveR
 	}
 	s.rateConfig.ReserveFee = cmd.ReserveFee
 	s.rateConfig.VatPercent = cmd.VatPercent
+	tiers := make([]application.RateTier, len(cmd.Tiers))
+	copy(tiers, cmd.Tiers)
+	s.rateConfig.Tiers = tiers
+	return s.rateConfig, nil
+}
+
+func (s *Store) UpdateRateConfig(_ context.Context, orgID *int64, configID int64, cmd application.UpdateRateConfigCommand) (application.MeterRateConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rateConfig.ID != configID {
+		return application.MeterRateConfig{}, application.ErrNotFound
+	}
+	if orgID != nil && s.rateConfig.OrgID != *orgID {
+		return application.MeterRateConfig{}, application.ErrForbidden
+	}
+	if cmd.PeriodID != nil {
+		for _, p := range s.periods {
+			if p.ID == *cmd.PeriodID && (orgID == nil || p.OrgID == *orgID) {
+				status := strings.ToLower(strings.TrimSpace(p.Status))
+				if status == "closed" || status == "finalized" {
+					return application.MeterRateConfig{}, fmt.Errorf("%w: cannot edit rate config for a finalized period", application.ErrConflict)
+				}
+				break
+			}
+		}
+	}
+	if strings.TrimSpace(cmd.MeterTypeName) != "" {
+		s.rateConfig.MeterTypeName = strings.TrimSpace(cmd.MeterTypeName)
+	}
+	s.rateConfig.ReserveFee = cmd.ReserveFee
+	s.rateConfig.VatPercent = cmd.VatPercent
+	s.org.VatRate = cmd.VatPercent
 	tiers := make([]application.RateTier, len(cmd.Tiers))
 	copy(tiers, cmd.Tiers)
 	s.rateConfig.Tiers = tiers
@@ -699,6 +769,117 @@ func (s *Store) RecordMeterReading(_ context.Context, orgID int64, _ int64, cmd 
 	return inv, nil
 }
 
+func (s *Store) ListReadings(_ context.Context, orgID *int64, filter application.MeterReadingFilter) ([]application.MeterReadingItem, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var targetPeriodID int64
+	var targetPeriodName string
+	if filter.PeriodID != nil && *filter.PeriodID > 0 {
+		targetPeriodID = *filter.PeriodID
+		for _, p := range s.periods {
+			if p.ID == targetPeriodID {
+				targetPeriodName = p.PeriodName
+				break
+			}
+		}
+	} else {
+		for _, p := range s.periods {
+			if orgID != nil && p.OrgID != *orgID {
+				continue
+			}
+			if strings.EqualFold(p.Status, "active") {
+				targetPeriodID = p.ID
+				targetPeriodName = p.PeriodName
+				break
+			}
+		}
+	}
+
+	meterByID := make(map[int64]application.WaterMeter, len(s.meters))
+	for _, m := range s.meters {
+		if orgID != nil && m.OrgID != *orgID {
+			continue
+		}
+		if filter.RouteID != nil && *filter.RouteID > 0 {
+			if m.RouteID == nil || *m.RouteID != *filter.RouteID {
+				continue
+			}
+		}
+		meterByID[m.MeterID] = m
+	}
+
+	recordedMeterIDs := make(map[int64]bool)
+	recordedItems := make([]application.MeterReadingItem, 0)
+	for _, inv := range s.invoices {
+		if orgID != nil && inv.OrgID != *orgID {
+			continue
+		}
+		if targetPeriodID > 0 && inv.PeriodID != targetPeriodID {
+			continue
+		}
+		m, ok := meterByID[inv.MeterID]
+		if !ok {
+			continue
+		}
+		recordedMeterIDs[inv.MeterID] = true
+		cur := inv.CurrentMeter
+		recordedItems = append(recordedItems, application.MeterReadingItem{
+			ID:            inv.ID,
+			InvoiceNo:     inv.InvoiceNo,
+			OrgID:         inv.OrgID,
+			MeterID:       inv.MeterID,
+			MeterNumber:   inv.MeterNumber,
+			HomeownerName: inv.HomeownerName,
+			HouseNo:       inv.HouseNo,
+			ZoneName:      inv.ZoneName,
+			RouteID:       m.RouteID,
+			PeriodID:      inv.PeriodID,
+			PeriodName:    inv.PeriodName,
+			LastMeter:     inv.LastMeter,
+			CurrentMeter:  &cur,
+			WaterUsed:     inv.WaterUsed,
+			TotalPaid:     inv.TotalPaid,
+			ReadingStatus: "recorded",
+			InvoiceStatus: inv.Status,
+			RecordedAt:    inv.RecordedAt,
+		})
+	}
+
+	if filter.Status == "recorded" {
+		return recordedItems, nil
+	}
+
+	pendingItems := make([]application.MeterReadingItem, 0)
+	for _, m := range s.meters {
+		if _, ok := meterByID[m.MeterID]; !ok {
+			continue
+		}
+		if recordedMeterIDs[m.MeterID] {
+			continue
+		}
+		pendingItems = append(pendingItems, application.MeterReadingItem{
+			OrgID:         m.OrgID,
+			MeterID:       m.MeterID,
+			MeterNumber:   m.MeterNumber,
+			HomeownerName: m.HomeownerName,
+			HouseNo:       m.HouseNo,
+			ZoneName:      m.ZoneName,
+			RouteID:       m.RouteID,
+			PeriodID:      targetPeriodID,
+			PeriodName:    targetPeriodName,
+			LastMeter:     m.LastMeterRecording,
+			ReadingStatus: "pending",
+		})
+	}
+
+	if filter.Status == "pending" {
+		return pendingItems, nil
+	}
+
+	return append(recordedItems, pendingItems...), nil
+}
+
 func (s *Store) ListInvoices(_ context.Context, _ *int64, status string, periodID *int64) ([]application.WaterInvoice, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -739,6 +920,565 @@ func (s *Store) PayInvoice(_ context.Context, _ *int64, cmd application.PayWater
 		}
 	}
 	return application.WaterInvoice{}, application.ErrNotFound
+}
+
+func (s *Store) FindUnpaidInvoices(_ context.Context, orgID *int64, userID int64) ([]application.WaterInvoice, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	userMeters := make(map[int64]bool)
+	for _, m := range s.meters {
+		if m.UserID != userID {
+			continue
+		}
+		if orgID != nil && m.OrgID != *orgID {
+			continue
+		}
+		userMeters[m.MeterID] = true
+	}
+
+	out := make([]application.WaterInvoice, 0)
+	for _, inv := range s.invoices {
+		if orgID != nil && inv.OrgID != *orgID {
+			continue
+		}
+		if !userMeters[inv.MeterID] {
+			continue
+		}
+		st := strings.ToLower(strings.TrimSpace(inv.Status))
+		if st != "invoice" && st != "owe" {
+			continue
+		}
+		out = append(out, inv)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].PeriodID != out[j].PeriodID {
+			return out[i].PeriodID < out[j].PeriodID
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out, nil
+}
+
+func (s *Store) PayInvoicesBulk(_ context.Context, orgID *int64, cmd application.BulkPaymentCommand) (application.PaymentBatchResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	batchID := strings.ToLower(strings.TrimSpace(cmd.BatchID))
+	if _, exists := s.paymentBatches[batchID]; exists {
+		return application.PaymentBatchResult{}, fmt.Errorf("%w: duplicate batch_id", application.ErrConflict)
+	}
+
+	// Phase 1: Validate all invoices BEFORE mutating any state (atomic rollback guarantee)
+	var resolvedOrgID int64
+	if orgID != nil {
+		resolvedOrgID = *orgID
+	}
+
+	targetIndices := make([]int, 0, len(cmd.InvoiceIDs))
+	var serverTotal float64
+	for _, invID := range cmd.InvoiceIDs {
+		idx := -1
+		for i := range s.invoices {
+			if s.invoices[i].ID == invID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d not found", application.ErrNotFound, invID)
+		}
+		inv := s.invoices[idx]
+		if resolvedOrgID == 0 {
+			resolvedOrgID = inv.OrgID
+		} else if inv.OrgID != resolvedOrgID {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d belongs to another organization", application.ErrForbidden, invID)
+		}
+		meterOwnedByUser := false
+		for _, m := range s.meters {
+			if m.MeterID == inv.MeterID && m.OrgID == resolvedOrgID && m.UserID == cmd.UserID {
+				meterOwnedByUser = true
+				break
+			}
+		}
+		if !meterOwnedByUser {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d does not belong to user %d", application.ErrForbidden, invID, cmd.UserID)
+		}
+		st := strings.ToLower(strings.TrimSpace(inv.Status))
+		if st != "invoice" && st != "owe" {
+			return application.PaymentBatchResult{}, fmt.Errorf("%w: invoice %d is already paid or not payable", application.ErrConflict, invID)
+		}
+		serverTotal += inv.TotalPaid
+		targetIndices = append(targetIndices, idx)
+	}
+
+	serverTotal = math.Round(serverTotal*100) / 100
+	if cmd.Amount+0.01 < serverTotal {
+		return application.PaymentBatchResult{}, fmt.Errorf("%w: payment amount %.2f is less than total due %.2f", application.ErrBadRequest, cmd.Amount, serverTotal)
+	}
+
+	// Phase 2: All checks passed — apply atomic mutation
+	method := strings.TrimSpace(cmd.PaymentMethod)
+	if method == "" {
+		method = "cash"
+	}
+	cashierID := cmd.CashierID
+	if cashierID <= 0 {
+		cashierID = 1
+	}
+	now := time.Now().UTC()
+	paidAt := now.Format(time.RFC3339)
+	receiptNo := fmt.Sprintf("RC-BATCH-%s-%s", now.Format("200601"), strings.ToUpper(batchID[:8]))
+
+	paidInvoices := make([]application.WaterInvoice, 0, len(targetIndices))
+	for _, idx := range targetIndices {
+		s.invoices[idx].Status = "paid"
+		s.invoices[idx].PaymentMethod = method
+		s.invoices[idx].CashierID = cashierID
+		s.invoices[idx].PaidAt = paidAt
+		s.invoices[idx].ReceiptNo = receiptNo
+		for mIdx := range s.meters {
+			if s.meters[mIdx].MeterID == s.invoices[idx].MeterID && s.meters[mIdx].OrgID == resolvedOrgID && s.meters[mIdx].OweCount > 0 {
+				s.meters[mIdx].OweCount--
+			}
+		}
+		paidInvoices = append(paidInvoices, s.invoices[idx])
+	}
+
+	result := application.PaymentBatchResult{
+		BatchID:       batchID,
+		OrgID:         resolvedOrgID,
+		UserID:        cmd.UserID,
+		TotalAmount:   serverTotal,
+		PaymentMethod: method,
+		ReceiptNo:     receiptNo,
+		PaidAt:        paidAt,
+		ReceivedBy:    cashierID,
+		Invoices:      paidInvoices,
+	}
+	s.paymentBatches[batchID] = result
+	return result, nil
+}
+
+func (s *Store) SeedCrossOrgMeterAndInvoice(meter application.WaterMeter, inv application.WaterInvoice) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.meters = append(s.meters, meter)
+	s.invoices = append(s.invoices, inv)
+}
+
+func (s *Store) SeedCrossOrgHomeowner(u application.HomeownerUser) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.homeowners = append(s.homeowners, u)
+}
+
+func (s *Store) InsertDebtNotice(_ context.Context, orgID *int64, cmd application.CreateDebtNoticeCommand) (application.DebtNotice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var resolvedOrgID int64
+	if orgID != nil {
+		resolvedOrgID = *orgID
+	}
+
+	var totalOverdue float64
+	var homeownerName, houseNo, meterNumber string
+
+	for _, invID := range cmd.InvoiceIDs {
+		idx := -1
+		for i := range s.invoices {
+			if s.invoices[i].ID == invID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return application.DebtNotice{}, fmt.Errorf("%w: invoice %d not found", application.ErrNotFound, invID)
+		}
+		inv := s.invoices[idx]
+		if resolvedOrgID == 0 {
+			resolvedOrgID = inv.OrgID
+		} else if inv.OrgID != resolvedOrgID {
+			return application.DebtNotice{}, fmt.Errorf("%w: invoice %d belongs to another organization", application.ErrForbidden, invID)
+		}
+		var ownedMeter *application.WaterMeter
+		for mIdx := range s.meters {
+			if s.meters[mIdx].MeterID == inv.MeterID && s.meters[mIdx].OrgID == resolvedOrgID && s.meters[mIdx].UserID == cmd.UserID {
+				ownedMeter = &s.meters[mIdx]
+				break
+			}
+		}
+		if ownedMeter == nil {
+			return application.DebtNotice{}, fmt.Errorf("%w: invoice %d does not belong to user %d", application.ErrForbidden, invID, cmd.UserID)
+		}
+		st := strings.ToLower(strings.TrimSpace(inv.Status))
+		if st != "invoice" && st != "owe" {
+			return application.DebtNotice{}, fmt.Errorf("%w: invoice %d is already paid", application.ErrConflict, invID)
+		}
+		totalOverdue += inv.TotalPaid
+		if homeownerName == "" {
+			homeownerName = ownedMeter.HomeownerName
+			houseNo = ownedMeter.HouseNo
+			meterNumber = ownedMeter.MeterNumber
+		}
+	}
+
+	seq := s.nextDebtSeq
+	s.nextDebtSeq++
+	id := fmt.Sprintf("00000000-0000-4000-8000-%012d", seq)
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	invIDs := make([]int64, len(cmd.InvoiceIDs))
+	copy(invIDs, cmd.InvoiceIDs)
+
+	notice := application.DebtNotice{
+		ID:                 id,
+		OrgID:              resolvedOrgID,
+		UserID:             cmd.UserID,
+		HomeownerName:      homeownerName,
+		HouseNo:            houseNo,
+		MeterNumber:        meterNumber,
+		InvoiceIDs:         invIDs,
+		TotalOverdueAmount: math.Round(totalOverdue*100) / 100,
+		Status:             application.DebtNoticeStatusSent,
+		NoticeSentAt:       now,
+		CreatedAt:          now,
+	}
+	s.debtNotices = append([]application.DebtNotice{notice}, s.debtNotices...)
+	return notice, nil
+}
+
+func (s *Store) FindDebtNotices(_ context.Context, orgID *int64, filter application.DebtNoticeFilter) ([]application.DebtNotice, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	st := strings.ToLower(strings.TrimSpace(filter.Status))
+	out := make([]application.DebtNotice, 0)
+	for _, n := range s.debtNotices {
+		if orgID != nil && n.OrgID != *orgID {
+			continue
+		}
+		if st != "" && strings.ToLower(n.Status) != st {
+			continue
+		}
+		if filter.UserID != nil && n.UserID != *filter.UserID {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+func (s *Store) FindDebtNoticeByID(_ context.Context, orgID *int64, id string) (application.DebtNotice, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	for _, n := range s.debtNotices {
+		if strings.ToLower(n.ID) != target {
+			continue
+		}
+		if orgID != nil && n.OrgID != *orgID {
+			return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+		}
+		return n, nil
+	}
+	return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+}
+
+func (s *Store) CutMeterByDebtNotice(_ context.Context, orgID *int64, id string, cmd application.CutMeterCommand) (application.DebtNotice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	idx := -1
+	for i := range s.debtNotices {
+		if strings.ToLower(s.debtNotices[i].ID) == target {
+			if orgID != nil && s.debtNotices[i].OrgID != *orgID {
+				return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+			}
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	if s.debtNotices[idx].Status != application.DebtNoticeStatusSent && s.debtNotices[idx].Status != application.DebtNoticeStatusPending {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice status %q cannot be cut", application.ErrConflict, s.debtNotices[idx].Status)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	reading := cmd.MeterReading
+	cutBy := cmd.CutBy
+	noticeID := s.debtNotices[idx].ID
+	noticeOrgID := s.debtNotices[idx].OrgID
+	noticeUserID := s.debtNotices[idx].UserID
+
+	s.debtNotices[idx].Status = application.DebtNoticeStatusCut
+	s.debtNotices[idx].CutAt = now
+	s.debtNotices[idx].CutBy = &cutBy
+	s.debtNotices[idx].CutMeterReading = &reading
+
+	for mIdx := range s.meters {
+		if s.meters[mIdx].OrgID == noticeOrgID && s.meters[mIdx].UserID == noticeUserID {
+			s.meters[mIdx].Status = "disconnected"
+			s.meters[mIdx].CutMeter = "1"
+			nid := noticeID
+			s.meters[mIdx].DebtNoticeID = &nid
+		}
+	}
+
+	return s.debtNotices[idx], nil
+}
+
+func (s *Store) RestoreMeterByDebtNotice(_ context.Context, orgID *int64, id string, restoredBy int64) (application.DebtNotice, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	idx := -1
+	for i := range s.debtNotices {
+		if strings.ToLower(s.debtNotices[i].ID) == target {
+			if orgID != nil && s.debtNotices[i].OrgID != *orgID {
+				return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+			}
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice not found", application.ErrNotFound)
+	}
+	if s.debtNotices[idx].Status != application.DebtNoticeStatusCut {
+		return application.DebtNotice{}, fmt.Errorf("%w: debt notice status %q cannot be restored", application.ErrConflict, s.debtNotices[idx].Status)
+	}
+
+	noticeOrgID := s.debtNotices[idx].OrgID
+	noticeUserID := s.debtNotices[idx].UserID
+
+	// Re-check unpaid invoices under write lock to prevent TOCTOU race
+	userMeters := make(map[int64]bool)
+	for _, m := range s.meters {
+		if m.OrgID == noticeOrgID && m.UserID == noticeUserID {
+			userMeters[m.MeterID] = true
+		}
+	}
+	for _, inv := range s.invoices {
+		if inv.OrgID == noticeOrgID && userMeters[inv.MeterID] {
+			st := strings.ToLower(strings.TrimSpace(inv.Status))
+			if st == "invoice" || st == "owe" {
+				return application.DebtNotice{}, fmt.Errorf("%w: outstanding balance remaining", application.ErrBadRequest)
+			}
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	rb := restoredBy
+	s.debtNotices[idx].Status = application.DebtNoticeStatusRestored
+	s.debtNotices[idx].RestoredAt = now
+	s.debtNotices[idx].RestoredBy = &rb
+
+	for mIdx := range s.meters {
+		if s.meters[mIdx].OrgID == noticeOrgID && s.meters[mIdx].UserID == noticeUserID {
+			s.meters[mIdx].Status = "active"
+			s.meters[mIdx].CutMeter = "0"
+		}
+	}
+
+	return s.debtNotices[idx], nil
+}
+
+func (s *Store) InsertIncident(_ context.Context, orgID int64, reporterUserID int64, cmd application.CreateIncidentCommand) (application.Incident, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seq := s.nextIncidentSeq
+	s.nextIncidentSeq++
+	id := fmt.Sprintf("10000000-0000-4000-8000-%012d", seq)
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	var reporterName string
+	for _, h := range s.homeowners {
+		if h.ID == reporterUserID && h.OrgID == orgID {
+			reporterName = strings.TrimSpace(h.FirstName + " " + h.LastName)
+			break
+		}
+	}
+
+	var latCopy, lngCopy *float64
+	if cmd.Lat != nil {
+		v := *cmd.Lat
+		latCopy = &v
+	}
+	if cmd.Lng != nil {
+		v := *cmd.Lng
+		lngCopy = &v
+	}
+
+	inc := application.Incident{
+		ID:             id,
+		OrgID:          orgID,
+		ReporterUserID: reporterUserID,
+		ReporterName:   reporterName,
+		IncidentType:   strings.ToLower(strings.TrimSpace(cmd.IncidentType)),
+		Description:    strings.TrimSpace(cmd.Description),
+		Lat:            latCopy,
+		Lng:            lngCopy,
+		PhotoURL:       strings.TrimSpace(cmd.PhotoURL),
+		Status:         application.IncidentStatusOpen,
+		CreatedAt:      now,
+	}
+	s.incidents = append([]application.Incident{inc}, s.incidents...)
+	return inc, nil
+}
+
+func (s *Store) FindIncidents(_ context.Context, orgID *int64, filter application.IncidentFilter) ([]application.Incident, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	st := strings.ToLower(strings.TrimSpace(filter.Status))
+	out := make([]application.Incident, 0)
+	for _, inc := range s.incidents {
+		if orgID != nil && inc.OrgID != *orgID {
+			continue
+		}
+		if st != "" && strings.ToLower(inc.Status) != st {
+			continue
+		}
+		if filter.AssignedTo != nil {
+			if inc.AssignedTo == nil || *inc.AssignedTo != *filter.AssignedTo {
+				continue
+			}
+		}
+		// List view must omit lat/lng
+		item := inc
+		item.Lat = nil
+		item.Lng = nil
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *Store) FindMyIncidents(_ context.Context, orgID *int64, reporterUserID int64) ([]application.Incident, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]application.Incident, 0)
+	for _, inc := range s.incidents {
+		if orgID != nil && inc.OrgID != *orgID {
+			continue
+		}
+		if inc.ReporterUserID != reporterUserID {
+			continue
+		}
+		// List view must omit lat/lng
+		item := inc
+		item.Lat = nil
+		item.Lng = nil
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *Store) FindIncidentByID(_ context.Context, orgID *int64, id string) (application.Incident, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	for _, inc := range s.incidents {
+		if strings.ToLower(inc.ID) != target {
+			continue
+		}
+		if orgID != nil && inc.OrgID != *orgID {
+			return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+		}
+		return inc, nil
+	}
+	return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+}
+
+func (s *Store) AssignIncident(_ context.Context, orgID *int64, id string, staffID int64) (application.Incident, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	idx := -1
+	for i := range s.incidents {
+		if strings.ToLower(s.incidents[i].ID) == target {
+			if orgID != nil && s.incidents[i].OrgID != *orgID {
+				return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+			}
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+
+	cur := &s.incidents[idx]
+	if cur.Status != application.IncidentStatusOpen && cur.Status != application.IncidentStatusInProgress {
+		return application.Incident{}, fmt.Errorf("%w: incident status %q cannot be assigned", application.ErrBadRequest, cur.Status)
+	}
+
+	staffExists := false
+	for _, u := range s.homeowners {
+		if u.ID == staffID && u.OrgID == cur.OrgID {
+			staffExists = true
+			break
+		}
+	}
+	if !staffExists {
+		return application.Incident{}, fmt.Errorf("%w: staff_id not found in organization", application.ErrBadRequest)
+	}
+
+	if cur.AssignedTo != nil && *cur.AssignedTo != staffID {
+		note := fmt.Sprintf("[reassigned from staff #%d]", *cur.AssignedTo)
+		if strings.TrimSpace(cur.Description) == "" {
+			cur.Description = note
+		} else {
+			cur.Description = cur.Description + "\n" + note
+		}
+	}
+
+	sid := staffID
+	cur.Status = application.IncidentStatusInProgress
+	cur.AssignedTo = &sid
+	cur.AssignedAt = time.Now().UTC().Format(time.RFC3339)
+	return *cur, nil
+}
+
+func (s *Store) ResolveIncident(_ context.Context, orgID *int64, id string, resolutionNote string) (application.Incident, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	target := strings.ToLower(strings.TrimSpace(id))
+	idx := -1
+	for i := range s.incidents {
+		if strings.ToLower(s.incidents[i].ID) == target {
+			if orgID != nil && s.incidents[i].OrgID != *orgID {
+				return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+			}
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return application.Incident{}, fmt.Errorf("%w: incident not found", application.ErrNotFound)
+	}
+
+	cur := &s.incidents[idx]
+	if cur.Status != application.IncidentStatusInProgress {
+		return application.Incident{}, fmt.Errorf("%w: incident status %q must be in_progress to resolve", application.ErrBadRequest, cur.Status)
+	}
+
+	cur.Status = application.IncidentStatusResolved
+	cur.ResolvedAt = time.Now().UTC().Format(time.RFC3339)
+	cur.ResolutionNote = strings.TrimSpace(resolutionNote)
+	return *cur, nil
 }
 
 func (s *Store) GetLiffPortalData(_ context.Context, lineUserID, meterNumber, houseNo string) (application.LiffResidentPortalData, error) {

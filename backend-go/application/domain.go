@@ -3,6 +3,7 @@ package application
 import (
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,7 +30,26 @@ type Claims struct {
 	Username  string
 	Roles     []string
 	OrgID     *int64
+	UserID    *int64
 	ExpiresAt time.Time
+}
+
+// ResolvedUserID extracts the numeric application user ID from claims (explicit user_id claim,
+// numeric subject, or demo-user-<id> subject format).
+func (c Claims) ResolvedUserID() (int64, bool) {
+	if c.UserID != nil && *c.UserID > 0 {
+		return *c.UserID, true
+	}
+	sub := strings.TrimSpace(c.Subject)
+	if id, err := strconv.ParseInt(sub, 10, 64); err == nil && id > 0 {
+		return id, true
+	}
+	if strings.HasPrefix(sub, "demo-user-") {
+		if id, err := strconv.ParseInt(strings.TrimPrefix(sub, "demo-user-"), 10, 64); err == nil && id > 0 {
+			return id, true
+		}
+	}
+	return 0, false
 }
 
 func (c Claims) HasAnyRole(roles ...string) bool {
@@ -60,6 +80,14 @@ func (c Claims) ResolveOrgScope(requestedOrgID *int64) (*int64, error) {
 		return nil, ErrForbidden
 	}
 	return c.OrgID, nil
+}
+
+// MeterRoute represents a meter-reading route assigned to an organization and optionally a staff member.
+type MeterRoute struct {
+	ID      int64  `json:"id"`
+	OrgID   int64  `json:"org_id"`
+	Name    string `json:"name"`
+	StaffID *int64 `json:"staff_id"`
 }
 
 // ResolveAvatarURL returns the uploaded avatar URL if present, or falls back to the automatic Default Avatar endpoint.

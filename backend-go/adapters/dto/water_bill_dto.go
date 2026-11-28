@@ -157,6 +157,86 @@ func (d *SaveRateConfigDTO) ConvertToEntity() (application.SaveRateConfigCommand
 	return cmd, nil
 }
 
+type UpdateRateTierDTO struct {
+	TierOrder   int      `json:"tier_order"`
+	MinUnits    *int     `json:"min_units"`
+	MaxUnits    *int     `json:"max_units"`
+	RatePerUnit *float64 `json:"rate_per_unit"`
+	From        *int     `json:"from"`
+	To          *int     `json:"to"`
+	Rate        *float64 `json:"rate"`
+	Comment     string   `json:"comment"`
+}
+
+type UpdateRateConfigDTO struct {
+	PeriodID      *int64              `json:"period_id"`
+	MeterTypeName string              `json:"meter_type_name"`
+	ReserveFee    float64             `json:"reserve_fee"`
+	VatPercent    float64             `json:"vat"`
+	Tiers         []UpdateRateTierDTO `json:"tiers"`
+}
+
+func NewUpdateRateConfigDTO() *UpdateRateConfigDTO {
+	return &UpdateRateConfigDTO{}
+}
+
+func (d *UpdateRateConfigDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *UpdateRateConfigDTO) ConvertToEntity() (application.UpdateRateConfigCommand, error) {
+	tiers := make([]application.RateTier, 0, len(d.Tiers))
+	for i, item := range d.Tiers {
+		minUnits := 0
+		if item.MinUnits != nil {
+			minUnits = *item.MinUnits
+		} else if item.From != nil {
+			minUnits = *item.From
+		}
+
+		var maxUnits *int
+		if item.MaxUnits != nil {
+			v := *item.MaxUnits
+			maxUnits = &v
+		} else if item.To != nil {
+			v := *item.To
+			maxUnits = &v
+		}
+
+		ratePerUnit := 0.0
+		if item.RatePerUnit != nil {
+			ratePerUnit = *item.RatePerUnit
+		} else if item.Rate != nil {
+			ratePerUnit = *item.Rate
+		}
+
+		order := item.TierOrder
+		if order <= 0 {
+			order = i + 1
+		}
+
+		tiers = append(tiers, application.RateTier{
+			TierOrder:   order,
+			MinUnits:    minUnits,
+			MaxUnits:    maxUnits,
+			RatePerUnit: ratePerUnit,
+			Comment:     item.Comment,
+		})
+	}
+
+	cmd := application.UpdateRateConfigCommand{
+		PeriodID:      d.PeriodID,
+		MeterTypeName: d.MeterTypeName,
+		ReserveFee:    d.ReserveFee,
+		VatPercent:    d.VatPercent,
+		Tiers:         tiers,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.UpdateRateConfigCommand{}, err
+	}
+	return cmd, nil
+}
+
 type CreateInvoicePeriodDTO struct {
 	PeriodName string `json:"period_name"`
 	StartDate  string `json:"start_date"`
@@ -315,6 +395,137 @@ func (d *LiffLinkAccountDTO) ConvertToEntity() (application.LiffLinkAccountComma
 	}
 	if _, err := cmd.IsValid(); err != nil {
 		return application.LiffLinkAccountCommand{}, err
+	}
+	return cmd, nil
+}
+
+type BulkPaymentDTO struct {
+	OrgID         *int64  `json:"org_id,omitempty"`
+	UserID        int64   `json:"user_id"`
+	InvoiceIDs    []int64 `json:"invoice_ids"`
+	Amount        float64 `json:"amount"`
+	BatchID       string  `json:"batch_id"`
+	PaymentMethod string  `json:"payment_method"`
+}
+
+func NewBulkPaymentDTO() *BulkPaymentDTO {
+	return &BulkPaymentDTO{}
+}
+
+func (d *BulkPaymentDTO) Bind(c echo.Context) error {
+	if err := c.Bind(d); err != nil {
+		return err
+	}
+	if d.BatchID == "" {
+		d.BatchID = c.Request().Header.Get("Idempotency-Key")
+	}
+	return nil
+}
+
+func (d *BulkPaymentDTO) ConvertToEntity() (application.BulkPaymentCommand, error) {
+	cmd := application.BulkPaymentCommand{
+		OrgID:         d.OrgID,
+		UserID:        d.UserID,
+		InvoiceIDs:    d.InvoiceIDs,
+		Amount:        d.Amount,
+		BatchID:       d.BatchID,
+		CashierID:     1,
+		PaymentMethod: d.PaymentMethod,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.BulkPaymentCommand{}, err
+	}
+	return cmd, nil
+}
+
+type CreateDebtNoticeDTO struct {
+	OrgID      *int64  `json:"org_id,omitempty"`
+	UserID     int64   `json:"user_id"`
+	InvoiceIDs []int64 `json:"invoice_ids"`
+}
+
+func NewCreateDebtNoticeDTO() *CreateDebtNoticeDTO {
+	return &CreateDebtNoticeDTO{}
+}
+
+func (d *CreateDebtNoticeDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *CreateDebtNoticeDTO) ConvertToEntity() (application.CreateDebtNoticeCommand, error) {
+	cmd := application.CreateDebtNoticeCommand{
+		OrgID:      d.OrgID,
+		UserID:     d.UserID,
+		InvoiceIDs: d.InvoiceIDs,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.CreateDebtNoticeCommand{}, err
+	}
+	return cmd, nil
+}
+
+type CutMeterDTO struct {
+	MeterReading float64 `json:"meter_reading"`
+}
+
+func NewCutMeterDTO() *CutMeterDTO {
+	return &CutMeterDTO{}
+}
+
+func (d *CutMeterDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *CutMeterDTO) ConvertToEntity() (application.CutMeterCommand, error) {
+	cmd := application.CutMeterCommand{
+		MeterReading: d.MeterReading,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.CutMeterCommand{}, err
+	}
+	return cmd, nil
+}
+
+type AssignIncidentDTO struct {
+	StaffID int64 `json:"staff_id"`
+}
+
+func NewAssignIncidentDTO() *AssignIncidentDTO {
+	return &AssignIncidentDTO{}
+}
+
+func (d *AssignIncidentDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *AssignIncidentDTO) ConvertToEntity() (application.AssignIncidentCommand, error) {
+	cmd := application.AssignIncidentCommand{
+		StaffID: d.StaffID,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.AssignIncidentCommand{}, err
+	}
+	return cmd, nil
+}
+
+type ResolveIncidentDTO struct {
+	ResolutionNote string `json:"resolution_note"`
+}
+
+func NewResolveIncidentDTO() *ResolveIncidentDTO {
+	return &ResolveIncidentDTO{}
+}
+
+func (d *ResolveIncidentDTO) Bind(c echo.Context) error {
+	return c.Bind(d)
+}
+
+func (d *ResolveIncidentDTO) ConvertToEntity() (application.ResolveIncidentCommand, error) {
+	cmd := application.ResolveIncidentCommand{
+		ResolutionNote: d.ResolutionNote,
+	}
+	if _, err := cmd.IsValid(); err != nil {
+		return application.ResolveIncidentCommand{}, err
 	}
 	return cmd, nil
 }

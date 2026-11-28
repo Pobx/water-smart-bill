@@ -33,6 +33,13 @@ export interface Homeowner {
   avatar_url: string
 }
 
+export interface MeterRoute {
+  id: number
+  org_id: number
+  name: string
+  staff_id?: number | null
+}
+
 export interface WaterMeterItem {
   meter_id: number
   meternumber: string
@@ -44,6 +51,7 @@ export interface WaterMeterItem {
   zone_name: string
   last_meter_recording: number
   status: 'active' | 'cutmeter'
+  route_id?: number | null
 }
 
 export interface InvoiceItem {
@@ -75,6 +83,27 @@ export interface InvoiceItem {
 }
 
 export type WaterInvoiceItem = InvoiceItem
+
+export interface MeterReadingStatusItem {
+  id?: number
+  inv_no?: string
+  org_id: number
+  meter_id: number
+  meternumber: string
+  homeowner_name: string
+  house_no: string
+  zone_name: string
+  route_id?: number | null
+  period_id?: number
+  period_name?: string
+  lastmeter: number
+  currentmeter?: number
+  water_used?: number
+  totalpaid?: number
+  reading_status: 'recorded' | 'pending'
+  invoice_status?: string
+  recorded_at?: string
+}
 
 export function makeDefaultAvatarDataUri(name: string): string {
   void name

@@ -5,9 +5,12 @@ import { TariffsMetersScreen, useTariffsMeters } from '@/features/tariffs-meters
 import { FieldReaderScreen, useFieldReader } from '@/features/field-reader'
 import { LiffPortalScreen, useLiffPortal } from '@/features/liff-portal'
 import { FinanceCashierScreen } from '@/features/finance-cashier'
+import { DebtNoticeListScreen } from '@/features/debt-management'
+import { DailyCollectionReport } from '@/features/reports'
+import { IncidentDashboard } from '@/features/incidents'
 import { SearchableSelect } from '@/shared/ui'
 
-export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff'
+export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff' | 'debt' | 'reports' | 'incidents'
 
 export interface MenuItem {
   id: TabKey
@@ -59,13 +62,41 @@ export const MENU_ITEMS: MenuItem[] = [
     allowedRoles: ['admin', 'user'],
     description: 'พอร์ทัลประชาชน ตรวจสอบประวัติค่าน้ำ และสแกนชำระ',
   },
+  {
+    id: 'debt',
+    label: '6. แจ้งเตือนหนี้ & ตัด/เปิดมิเตอร์',
+    shortLabel: 'แจ้งเตือนหนี้ & ตัดมิเตอร์',
+    icon: '⚠️',
+    allowedRoles: ['admin', 'tabwater_staff'],
+    description: 'สร้างใบแจ้งเตือนค้างชำระ, บันทึกตัดมิเตอร์ และเปิดคืนมิเตอร์หลังชำระครบ',
+  },
+  {
+    id: 'reports',
+    label: '7. รายงานการรับชำระ (Excel)',
+    shortLabel: 'รายงานการรับชำระ',
+    icon: '📑',
+    allowedRoles: ['admin', 'finance_staff'],
+    description: 'รายงานการรับชำระค่าน้ำประจำวัน/ตามช่วงเวลา และส่งออกไฟล์ Excel (.xlsx)',
+  },
+  {
+    id: 'incidents',
+    label: '8. แจ้งเหตุขัดข้อง (Incidents)',
+    shortLabel: 'แจ้งเหตุขัดข้อง',
+    icon: '🚨',
+    allowedRoles: ['admin', 'tabwater_staff'],
+    description: 'ตรวจสอบเหตุขัดข้องน้ำประปา, รับงานซ่อม, ดูพิกัด GPS และปิดงาน',
+  },
 ]
 
 export function App() {
   const auth = useAuth()
   const masterData = useMasterData()
-  const tariffsMeters = useTariffsMeters(masterData.homeowners)
-  const liffPortal = useLiffPortal(tariffsMeters.meters)
+  const tariffsMeters = useTariffsMeters(
+    masterData.homeowners,
+    auth.jwtToken,
+    (vat) => masterData.setOrgInfo((prev) => ({ ...prev, vat }))
+  )
+  const liffPortal = useLiffPortal(tariffsMeters.meters, auth.jwtToken)
   const fieldReader = useFieldReader({
     orgInfo: masterData.orgInfo,
     meters: tariffsMeters.meters,
@@ -75,6 +106,7 @@ export function App() {
     periods: tariffsMeters.periods,
     invoices: liffPortal.invoices,
     setInvoices: liffPortal.setInvoices,
+    token: auth.jwtToken,
   })
 
   // Filter menu items by user's current role (RBAC)
@@ -85,7 +117,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('tab') as TabKey
-      if (param && ['master', 'tariffs', 'reader', 'cashier', 'liff'].includes(param)) {
+      if (param && ['master', 'tariffs', 'reader', 'cashier', 'liff', 'debt', 'reports', 'incidents'].includes(param)) {
         return param
       }
     }
@@ -334,6 +366,22 @@ export function App() {
               orgName={masterData.orgInfo.org_name}
               meters={tariffsMeters.meters}
             />
+          )}
+
+          {resolvedActiveTab === 'debt' && (
+            <DebtNoticeListScreen
+              token={auth.jwtToken}
+              currentRole={auth.currentRole}
+              homeowners={masterData.homeowners}
+            />
+          )}
+
+          {resolvedActiveTab === 'reports' && (
+            <DailyCollectionReport token={auth.jwtToken} />
+          )}
+
+          {resolvedActiveTab === 'incidents' && (
+            <IncidentDashboard token={auth.jwtToken} />
           )}
         </main>
       </div>

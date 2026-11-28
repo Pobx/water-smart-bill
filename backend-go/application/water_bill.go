@@ -1,6 +1,7 @@
 package application
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -46,25 +47,27 @@ type Organization struct {
 	LogoImg           string  `json:"org_logo_img"`
 	MeterPrefix       string  `json:"meternumbercode"`
 	CutMeterThreshold int     `json:"cutmeter_count"`
+	OverdueThreshold  int     `json:"overdue_threshold"`
 	VatRate           float64 `json:"vat"`
 }
 
 type UpsertOrganizationCommand struct {
-	Code        string  `json:"org_code"`
-	Name        string  `json:"org_name"`
-	Address     string  `json:"org_address"`
-	TambonID    int64   `json:"org_tambon_id"`
-	DistrictID  int64   `json:"org_district_id"`
-	ProvinceID  int64   `json:"org_province_id"`
-	Zipcode     string  `json:"org_zipcode"`
-	Phone       string  `json:"org_phone"`
-	DeptName    string  `json:"org_dept_name"`
-	HeadName    string  `json:"org_head_name"`
-	FinHeadName string  `json:"fin_head_name"`
-	TwHeadName  string  `json:"tw_head_name"`
-	LogoImg     string  `json:"org_logo_img"`
-	MeterPrefix string  `json:"meternumbercode"`
-	VatRate     float64 `json:"vat"`
+	Code             string  `json:"org_code"`
+	Name             string  `json:"org_name"`
+	Address          string  `json:"org_address"`
+	TambonID         int64   `json:"org_tambon_id"`
+	DistrictID       int64   `json:"org_district_id"`
+	ProvinceID       int64   `json:"org_province_id"`
+	Zipcode          string  `json:"org_zipcode"`
+	Phone            string  `json:"org_phone"`
+	DeptName         string  `json:"org_dept_name"`
+	HeadName         string  `json:"org_head_name"`
+	FinHeadName      string  `json:"fin_head_name"`
+	TwHeadName       string  `json:"tw_head_name"`
+	LogoImg          string  `json:"org_logo_img"`
+	MeterPrefix      string  `json:"meternumbercode"`
+	OverdueThreshold int     `json:"overdue_threshold"`
+	VatRate          float64 `json:"vat"`
 }
 
 func (cmd UpsertOrganizationCommand) IsValid() (bool, error) {
@@ -215,6 +218,87 @@ func (cmd SaveRateConfigCommand) Validate() error {
 	return err
 }
 
+type UpdateRateConfigCommand struct {
+	PeriodID      *int64     `json:"period_id,omitempty"`
+	MeterTypeName string     `json:"meter_type_name,omitempty"`
+	ReserveFee    float64    `json:"reserve_fee"`
+	VatPercent    float64    `json:"vat"`
+	Tiers         []RateTier `json:"tiers"`
+}
+
+// ValidateRateTiers validates and sorts progressive water rate tiers,
+// rejecting negative values, invalid ranges, gaps, or overlaps.
+func ValidateRateTiers(tiers []RateTier) ([]RateTier, error) {
+	if len(tiers) == 0 {
+		return nil, fmt.Errorf("%w: at least one tier is required", ErrBadRequest)
+	}
+	sorted := make([]RateTier, len(tiers))
+	copy(sorted, tiers)
+
+	for _, t := range sorted {
+		if t.MinUnits < 0 {
+			return nil, fmt.Errorf("%w: tier min_units must be >= 0", ErrBadRequest)
+		}
+		if t.RatePerUnit < 0 {
+			return nil, fmt.Errorf("%w: tier rate_per_unit must be >= 0", ErrBadRequest)
+		}
+		if t.MaxUnits != nil && *t.MaxUnits < t.MinUnits {
+			return nil, fmt.Errorf("%w: tier max_units must be >= min_units", ErrBadRequest)
+		}
+	}
+
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].MinUnits != sorted[j].MinUnits {
+			return sorted[i].MinUnits < sorted[j].MinUnits
+		}
+		if sorted[i].MaxUnits == nil {
+			return false
+		}
+		if sorted[j].MaxUnits == nil {
+			return true
+		}
+		return *sorted[i].MaxUnits < *sorted[j].MaxUnits
+	})
+
+	for i := 0; i < len(sorted)-1; i++ {
+		prev := sorted[i]
+		next := sorted[i+1]
+		if prev.MaxUnits == nil {
+			return nil, fmt.Errorf("%w: tier overlap detected", ErrBadRequest)
+		}
+		if *prev.MaxUnits+1 < next.MinUnits {
+			return nil, fmt.Errorf("%w: tier gap detected", ErrBadRequest)
+		}
+		if *prev.MaxUnits+1 > next.MinUnits {
+			return nil, fmt.Errorf("%w: tier overlap detected", ErrBadRequest)
+		}
+	}
+
+	for i := range sorted {
+		sorted[i].TierOrder = i + 1
+	}
+
+	return sorted, nil
+}
+
+func (cmd UpdateRateConfigCommand) IsValid() (bool, error) {
+	if cmd.VatPercent < 0 || cmd.VatPercent > 100 {
+		return false, fmt.Errorf("%w: vat must be between 0 and 100", ErrBadRequest)
+	}
+	if cmd.ReserveFee < 0 {
+		return false, fmt.Errorf("%w: reserve_fee must be >= 0", ErrBadRequest)
+	}
+	if _, err := ValidateRateTiers(cmd.Tiers); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (cmd UpdateRateConfigCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
 type WaterBillBreakdown struct {
 	UnitsUsed    float64 `json:"units_used"`
 	WaterCharge  float64 `json:"water_charge"`
@@ -306,7 +390,36 @@ type WaterMeter struct {
 	Status             string  `json:"status"`
 	OweCount           int     `json:"owe_count"`
 	CutMeter           string  `json:"cutmeter"`
+	DebtNoticeID       *string `json:"debt_notice_id,omitempty"`
 	LastMeterRecording float64 `json:"last_meter_recording"`
+	RouteID            *int64  `json:"route_id,omitempty"`
+}
+
+type MeterReadingFilter struct {
+	PeriodID *int64
+	Status   string
+	RouteID  *int64
+}
+
+type MeterReadingItem struct {
+	ID            int64    `json:"id,omitempty"`
+	InvoiceNo     string   `json:"inv_no,omitempty"`
+	OrgID         int64    `json:"org_id"`
+	MeterID       int64    `json:"meter_id"`
+	MeterNumber   string   `json:"meternumber"`
+	HomeownerName string   `json:"homeowner_name"`
+	HouseNo       string   `json:"house_no"`
+	ZoneName      string   `json:"zone_name"`
+	RouteID       *int64   `json:"route_id,omitempty"`
+	PeriodID      int64    `json:"period_id,omitempty"`
+	PeriodName    string   `json:"period_name,omitempty"`
+	LastMeter     float64  `json:"lastmeter"`
+	CurrentMeter  *float64 `json:"currentmeter,omitempty"`
+	WaterUsed     float64  `json:"water_used,omitempty"`
+	TotalPaid     float64  `json:"totalpaid,omitempty"`
+	ReadingStatus string   `json:"reading_status"`
+	InvoiceStatus string   `json:"invoice_status,omitempty"`
+	RecordedAt    string   `json:"recorded_at,omitempty"`
 }
 
 type CreateWaterMeterCommand struct {
@@ -456,6 +569,154 @@ func (cmd PayWaterInvoiceCommand) Validate() error {
 	return err
 }
 
+// ---- Bulk Payment & Outstanding Balance Models ------------------------------
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+func IsValidUUID(raw string) bool {
+	return uuidPattern.MatchString(strings.TrimSpace(raw))
+}
+
+type OutstandingBalance struct {
+	Invoices []WaterInvoice `json:"invoices"`
+	Total    float64        `json:"total"`
+}
+
+type BulkPaymentCommand struct {
+	OrgID         *int64  `json:"org_id,omitempty"`
+	UserID        int64   `json:"user_id"`
+	InvoiceIDs    []int64 `json:"invoice_ids"`
+	Amount        float64 `json:"amount"`
+	BatchID       string  `json:"batch_id"`
+	CashierID     int64   `json:"cashier_id"`
+	PaymentMethod string  `json:"payment_method"`
+}
+
+func (cmd BulkPaymentCommand) IsValid() (bool, error) {
+	if cmd.UserID <= 0 {
+		return false, fmt.Errorf("%w: user_id must be positive", ErrBadRequest)
+	}
+	if len(cmd.InvoiceIDs) == 0 {
+		return false, fmt.Errorf("%w: invoice_ids must not be empty", ErrBadRequest)
+	}
+	seen := make(map[int64]struct{}, len(cmd.InvoiceIDs))
+	for _, id := range cmd.InvoiceIDs {
+		if id <= 0 {
+			return false, fmt.Errorf("%w: invoice_ids must contain positive integers", ErrBadRequest)
+		}
+		if _, dup := seen[id]; dup {
+			return false, fmt.Errorf("%w: duplicate invoice_id %d in request", ErrBadRequest, id)
+		}
+		seen[id] = struct{}{}
+	}
+	if cmd.Amount <= 0 {
+		return false, fmt.Errorf("%w: amount must be > 0", ErrBadRequest)
+	}
+	batchID := strings.TrimSpace(cmd.BatchID)
+	if !uuidPattern.MatchString(batchID) {
+		return false, fmt.Errorf("%w: batch_id must be a valid UUID", ErrBadRequest)
+	}
+	return true, nil
+}
+
+func (cmd BulkPaymentCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type PaymentBatchResult struct {
+	BatchID       string         `json:"batch_id"`
+	OrgID         int64          `json:"org_id"`
+	UserID        int64          `json:"user_id"`
+	TotalAmount   float64        `json:"total_amount"`
+	PaymentMethod string         `json:"payment_method"`
+	ReceiptNo     string         `json:"receipt_no"`
+	PaidAt        string         `json:"paid_at"`
+	ReceivedBy    int64          `json:"received_by"`
+	Invoices      []WaterInvoice `json:"invoices"`
+}
+
+// ---- Debt Notice & Meter Disconnection / Restoration Models -----------------
+
+const (
+	DebtNoticeStatusPending  = "pending"
+	DebtNoticeStatusSent     = "sent"
+	DebtNoticeStatusCut      = "cut"
+	DebtNoticeStatusRestored = "restored"
+)
+
+type DebtNotice struct {
+	ID                 string   `json:"id"`
+	OrgID              int64    `json:"org_id"`
+	UserID             int64    `json:"user_id"`
+	HomeownerName      string   `json:"homeowner_name,omitempty"`
+	HouseNo            string   `json:"house_no,omitempty"`
+	MeterNumber        string   `json:"meternumber,omitempty"`
+	InvoiceIDs         []int64  `json:"invoice_ids"`
+	TotalOverdueAmount float64  `json:"total_overdue_amount"`
+	Status             string   `json:"status"`
+	NoticeSentAt       string   `json:"notice_sent_at,omitempty"`
+	CutAt              string   `json:"cut_at,omitempty"`
+	CutBy              *int64   `json:"cut_by,omitempty"`
+	CutMeterReading    *float64 `json:"cut_meter_reading,omitempty"`
+	RestoredAt         string   `json:"restored_at,omitempty"`
+	RestoredBy         *int64   `json:"restored_by,omitempty"`
+	CreatedAt          string   `json:"created_at"`
+}
+
+type DebtNoticeFilter struct {
+	Status string
+	UserID *int64
+}
+
+type CreateDebtNoticeCommand struct {
+	OrgID      *int64  `json:"org_id,omitempty"`
+	UserID     int64   `json:"user_id"`
+	InvoiceIDs []int64 `json:"invoice_ids"`
+}
+
+func (cmd CreateDebtNoticeCommand) IsValid() (bool, error) {
+	if cmd.UserID <= 0 {
+		return false, fmt.Errorf("%w: user_id must be positive", ErrBadRequest)
+	}
+	if len(cmd.InvoiceIDs) == 0 {
+		return false, fmt.Errorf("%w: invoice_ids must not be empty", ErrBadRequest)
+	}
+	seen := make(map[int64]struct{}, len(cmd.InvoiceIDs))
+	for _, id := range cmd.InvoiceIDs {
+		if id <= 0 {
+			return false, fmt.Errorf("%w: invoice_ids must contain positive integers", ErrBadRequest)
+		}
+		if _, dup := seen[id]; dup {
+			return false, fmt.Errorf("%w: duplicate invoice_id %d", ErrBadRequest, id)
+		}
+		seen[id] = struct{}{}
+	}
+	return true, nil
+}
+
+func (cmd CreateDebtNoticeCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type CutMeterCommand struct {
+	MeterReading float64 `json:"meter_reading"`
+	CutBy        int64   `json:"cut_by,omitempty"`
+}
+
+func (cmd CutMeterCommand) IsValid() (bool, error) {
+	if cmd.MeterReading < 0 {
+		return false, fmt.Errorf("%w: meter_reading must be >= 0", ErrBadRequest)
+	}
+	return true, nil
+}
+
+func (cmd CutMeterCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
 // ---- Optional AI / OCR Meter Reading Support --------------------------------
 
 type MeterOCRResult struct {
@@ -553,4 +814,124 @@ type CollectionSummaryReport struct {
 	TotalPromptPay   float64        `json:"total_promptpay"`
 	GeneratedAt      string         `json:"generated_at"`
 	Invoices         []WaterInvoice `json:"invoices"`
+}
+
+// ---- Incident Reporting Models (GPS, Photo, Assign/Resolve Workflow) --------
+
+const (
+	IncidentTypeNoWater     = "no_water"
+	IncidentTypeCloudyWater = "cloudy_water"
+	IncidentTypeBrokenPipe  = "broken_pipe"
+	IncidentTypeOther       = "other"
+
+	IncidentStatusOpen       = "open"
+	IncidentStatusInProgress = "in_progress"
+	IncidentStatusResolved   = "resolved"
+	IncidentStatusClosed     = "closed"
+)
+
+func IsValidIncidentType(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case IncidentTypeNoWater, IncidentTypeCloudyWater, IncidentTypeBrokenPipe, IncidentTypeOther:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidIncidentStatus(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case IncidentStatusOpen, IncidentStatusInProgress, IncidentStatusResolved, IncidentStatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+type Incident struct {
+	ID             string   `json:"id"`
+	OrgID          int64    `json:"org_id"`
+	ReporterUserID int64    `json:"reporter_user_id"`
+	ReporterName   string   `json:"reporter_name,omitempty"`
+	IncidentType   string   `json:"incident_type"`
+	Description    string   `json:"description,omitempty"`
+	Lat            *float64 `json:"lat,omitempty"`
+	Lng            *float64 `json:"lng,omitempty"`
+	PhotoURL       string   `json:"photo_url,omitempty"`
+	Status         string   `json:"status"`
+	AssignedTo     *int64   `json:"assigned_to,omitempty"`
+	AssignedAt     string   `json:"assigned_at,omitempty"`
+	ResolvedAt     string   `json:"resolved_at,omitempty"`
+	ResolutionNote string   `json:"resolution_note,omitempty"`
+	CreatedAt      string   `json:"created_at"`
+}
+
+type IncidentFilter struct {
+	Status     string
+	AssignedTo *int64
+}
+
+type CreateIncidentCommand struct {
+	IncidentType string   `json:"incident_type"`
+	Description  string   `json:"description"`
+	Lat          *float64 `json:"lat,omitempty"`
+	Lng          *float64 `json:"lng,omitempty"`
+	PhotoURL     string   `json:"photo_url,omitempty"`
+}
+
+func (cmd CreateIncidentCommand) IsValid() (bool, error) {
+	if !IsValidIncidentType(cmd.IncidentType) {
+		return false, fmt.Errorf("%w: invalid incident_type (allowed: no_water, cloudy_water, broken_pipe, other)", ErrBadRequest)
+	}
+	if (cmd.Lat != nil && cmd.Lng == nil) || (cmd.Lat == nil && cmd.Lng != nil) {
+		return false, fmt.Errorf("%w: both lat and lng must be provided together", ErrBadRequest)
+	}
+	if cmd.Lat != nil {
+		if math.IsNaN(*cmd.Lat) || math.IsInf(*cmd.Lat, 0) || *cmd.Lat < -90 || *cmd.Lat > 90 {
+			return false, fmt.Errorf("%w: invalid coordinates", ErrBadRequest)
+		}
+	}
+	if cmd.Lng != nil {
+		if math.IsNaN(*cmd.Lng) || math.IsInf(*cmd.Lng, 0) || *cmd.Lng < -180 || *cmd.Lng > 180 {
+			return false, fmt.Errorf("%w: invalid coordinates", ErrBadRequest)
+		}
+	}
+	return true, nil
+}
+
+func (cmd CreateIncidentCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type AssignIncidentCommand struct {
+	StaffID int64 `json:"staff_id"`
+}
+
+func (cmd AssignIncidentCommand) IsValid() (bool, error) {
+	if cmd.StaffID <= 0 {
+		return false, fmt.Errorf("%w: staff_id must be positive", ErrBadRequest)
+	}
+	return true, nil
+}
+
+func (cmd AssignIncidentCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
+}
+
+type ResolveIncidentCommand struct {
+	ResolutionNote string `json:"resolution_note"`
+}
+
+func (cmd ResolveIncidentCommand) IsValid() (bool, error) {
+	if strings.TrimSpace(cmd.ResolutionNote) == "" {
+		return false, fmt.Errorf("%w: resolution_note is required", ErrBadRequest)
+	}
+	return true, nil
+}
+
+func (cmd ResolveIncidentCommand) Validate() error {
+	_, err := cmd.IsValid()
+	return err
 }
