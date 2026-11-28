@@ -5,9 +5,10 @@ import { TariffsMetersScreen, useTariffsMeters } from '@/features/tariffs-meters
 import { FieldReaderScreen, useFieldReader } from '@/features/field-reader'
 import { LiffPortalScreen, useLiffPortal } from '@/features/liff-portal'
 import { FinanceCashierScreen } from '@/features/finance-cashier'
+import { DebtNoticeListScreen } from '@/features/debt-management'
 import { SearchableSelect } from '@/shared/ui'
 
-export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff'
+export type TabKey = 'master' | 'tariffs' | 'reader' | 'cashier' | 'liff' | 'debt'
 
 export interface MenuItem {
   id: TabKey
@@ -59,6 +60,14 @@ export const MENU_ITEMS: MenuItem[] = [
     allowedRoles: ['admin', 'user'],
     description: 'พอร์ทัลประชาชน ตรวจสอบประวัติค่าน้ำ และสแกนชำระ',
   },
+  {
+    id: 'debt',
+    label: '6. แจ้งเตือนหนี้ & ตัด/เปิดมิเตอร์',
+    shortLabel: 'แจ้งเตือนหนี้ & ตัดมิเตอร์',
+    icon: '⚠️',
+    allowedRoles: ['admin', 'tabwater_staff'],
+    description: 'สร้างใบแจ้งเตือนค้างชำระ, บันทึกตัดมิเตอร์ และเปิดคืนมิเตอร์หลังชำระครบ',
+  },
 ]
 
 export function App() {
@@ -90,7 +99,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (typeof window !== 'undefined') {
       const param = new URLSearchParams(window.location.search).get('tab') as TabKey
-      if (param && ['master', 'tariffs', 'reader', 'cashier', 'liff'].includes(param)) {
+      if (param && ['master', 'tariffs', 'reader', 'cashier', 'liff', 'debt'].includes(param)) {
         return param
       }
     }
@@ -338,6 +347,14 @@ export function App() {
               {...liffPortal}
               orgName={masterData.orgInfo.org_name}
               meters={tariffsMeters.meters}
+            />
+          )}
+
+          {resolvedActiveTab === 'debt' && (
+            <DebtNoticeListScreen
+              token={auth.jwtToken}
+              currentRole={auth.currentRole}
+              homeowners={masterData.homeowners}
             />
           )}
         </main>
